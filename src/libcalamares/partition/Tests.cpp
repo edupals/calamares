@@ -8,20 +8,34 @@
  *
  */
 
-#include "Tests.h"
-
 #include "PartitionSize.h"
+
+#include "utils/Logger.h"
+
+#include <QObject>
+#include <QtTest/QtTest>
 
 using SizeUnit = CalamaresUtils::Partition::SizeUnit;
 using PartitionSize = CalamaresUtils::Partition::PartitionSize;
 
 Q_DECLARE_METATYPE( SizeUnit )
 
-#include "utils/Logger.h"
+class PartitionSizeTests : public QObject
+{
+    Q_OBJECT
+public:
+    PartitionSizeTests();
+    ~PartitionSizeTests() override;
 
-#include <QtTest/QtTest>
+private Q_SLOTS:
+    void initTestCase();
 
-QTEST_GUILESS_MAIN( PartitionSizeTests )
+    void testUnitComparison_data();
+    void testUnitComparison();
+
+    void testUnitNormalisation_data();
+    void testUnitNormalisation();
+};
 
 PartitionSizeTests::PartitionSizeTests() {}
 
@@ -139,3 +153,9 @@ PartitionSizeTests::testUnitNormalisation()
 
     QCOMPARE( PartitionSize( v, u1 ).toBytes(), bytes );
 }
+
+QTEST_GUILESS_MAIN( PartitionSizeTests )
+
+#include "utils/moc-warnings.h"
+
+#include "Tests.moc"
