@@ -10,10 +10,16 @@
 
 #include "PartitionSize.h"
 
+#include "GlobalStorage.h"
 #include "utils/Logger.h"
 
 #include <QObject>
 #include <QtTest/QtTest>
+
+// Implementation details being tested
+extern bool isFilesystemUsedGS( const Calamares::GlobalStorage& gs, const QString& filesystemType );
+extern void useFilesystemGS( Calamares::GlobalStorage& gs, const QString& filesystemType, bool used );
+
 
 using SizeUnit = CalamaresUtils::Partition::SizeUnit;
 using PartitionSize = CalamaresUtils::Partition::PartitionSize;
@@ -35,6 +41,8 @@ private Q_SLOTS:
 
     void testUnitNormalisation_data();
     void testUnitNormalisation();
+
+    void testFilesystemGS();
 };
 
 PartitionServiceTests::PartitionServiceTests() {}
@@ -153,6 +161,47 @@ PartitionServiceTests::testUnitNormalisation()
 
     QCOMPARE( PartitionSize( v, u1 ).toBytes(), bytes );
 }
+
+void
+PartitionServiceTests::testFilesystemGS()
+{
+    // Some filesystems names, they don't have to be real
+    const QStringList fsNames { "ext4", "zfs", "berries", "carrot" };
+    // Predicate to return whether we consider this FS in use
+    auto pred = []( const QString& s ) { return !s.startsWith( 'z' ); };
+
+    // Fill the GS
+    Calamares::GlobalStorage gs;
+    for ( const auto& s : fsNames )
+    {
+        useFilesystemGS( gs, s, pred( s ) );
+    }
+
+    QVERIFY( gs.contains( "filesystem_use" ) );
+    {
+        const auto map = gs.value( "filesystem_use" ).toMap();
+        QCOMPARE( map.count(), fsNames.count() );
+    }
+
+    for ( const auto& s : fsNames )
+    {
+        QCOMPARE( isFilesystemUsedGS( gs, s ), pred( s ) );
+    }
+    QCOMPARE( isFilesystemUsedGS( gs, QStringLiteral( "derp" ) ), false );
+    QCOMPARE( isFilesystemUsedGS( gs, QString() ), false );
+    // But I can set a value for QString!
+    useFilesystemGS( gs, QString(), true );
+    QCOMPARE( isFilesystemUsedGS( gs, QString() ), true );
+    // .. and replace it again
+    useFilesystemGS( gs, QString(), false );
+    QCOMPARE( isFilesystemUsedGS( gs, QString() ), false );
+    // Now there is one more key
+    {
+        const auto map = gs.value( "filesystem_use" ).toMap();
+        QCOMPARE( map.count(), fsNames.count() + 1 );
+    }
+}
+
 
 QTEST_GUILESS_MAIN( PartitionServiceTests )
 
