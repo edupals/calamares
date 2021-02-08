@@ -20,12 +20,12 @@ using PartitionSize = CalamaresUtils::Partition::PartitionSize;
 
 Q_DECLARE_METATYPE( SizeUnit )
 
-class PartitionSizeTests : public QObject
+class PartitionServiceTests : public QObject
 {
     Q_OBJECT
 public:
-    PartitionSizeTests();
-    ~PartitionSizeTests() override;
+    PartitionServiceTests();
+    ~PartitionServiceTests() override;
 
 private Q_SLOTS:
     void initTestCase();
@@ -37,17 +37,17 @@ private Q_SLOTS:
     void testUnitNormalisation();
 };
 
-PartitionSizeTests::PartitionSizeTests() {}
+PartitionServiceTests::PartitionServiceTests() {}
 
-PartitionSizeTests::~PartitionSizeTests() {}
+PartitionServiceTests::~PartitionServiceTests() {}
 
 void
-PartitionSizeTests::initTestCase()
+PartitionServiceTests::initTestCase()
 {
 }
 
 void
-PartitionSizeTests::testUnitComparison_data()
+PartitionServiceTests::testUnitComparison_data()
 {
     QTest::addColumn< SizeUnit >( "u1" );
     QTest::addColumn< SizeUnit >( "u2" );
@@ -85,7 +85,7 @@ original_compare( SizeUnit m_unit, SizeUnit other_m_unit )
 }
 
 void
-PartitionSizeTests::testUnitComparison()
+PartitionServiceTests::testUnitComparison()
 {
     QFETCH( SizeUnit, u1 );
     QFETCH( SizeUnit, u2 );
@@ -112,7 +112,7 @@ constexpr qint64 operator""_qi( unsigned long long m )
 }
 
 void
-PartitionSizeTests::testUnitNormalisation_data()
+PartitionServiceTests::testUnitNormalisation_data()
 {
     QTest::addColumn< SizeUnit >( "u1" );
     QTest::addColumn< int >( "v" );
@@ -145,7 +145,7 @@ PartitionSizeTests::testUnitNormalisation_data()
 }
 
 void
-PartitionSizeTests::testUnitNormalisation()
+PartitionServiceTests::testUnitNormalisation()
 {
     QFETCH( SizeUnit, u1 );
     QFETCH( int, v );
@@ -154,7 +154,7 @@ PartitionSizeTests::testUnitNormalisation()
     QCOMPARE( PartitionSize( v, u1 ).toBytes(), bytes );
 }
 
-QTEST_GUILESS_MAIN( PartitionSizeTests )
+QTEST_GUILESS_MAIN( PartitionServiceTests )
 
 #include "utils/moc-warnings.h"
 
