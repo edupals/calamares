@@ -1,0 +1,4 @@
+usr/bin/
+usr/lib/*/calamares/
+usr/lib/*/libcalamares*.so.*
+usr/share/
