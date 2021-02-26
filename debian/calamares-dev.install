@@ -1,0 +1,3 @@
+usr/lib/*/libcalamares*.so
+usr/include/*
+usr/lib/*/cmake

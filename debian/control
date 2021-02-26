@@ -67,3 +67,9 @@ Description: distribution-independent installer framework
  You will likely want to provide your own config files to match
  your distribution, reading the Calamares documentation will guide
  you through that process.
+
+Package: calamares-dev
+Architecture: linux-any
+Depends: calamares
+Description: Calamares development package
+ Calamares development package with headers and cmake recipes
