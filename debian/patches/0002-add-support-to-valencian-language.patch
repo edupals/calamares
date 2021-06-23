@@ -1,0 +1,132 @@
+From: Raul Rodrigo <raurodse@gmail.com>
+Date: Wed, 23 Jun 2021 17:15:38 +0200
+Subject: add support to valencian languaeg
+
+---
+ src/libcalamares/locale/Label.cpp       |  5 ++++-
+ src/libcalamares/utils/Retranslator.cpp | 12 ++++++++++++
+ src/modules/welcome/Config.cpp          | 30 +++++++++++++++++++++++++++---
+ 3 files changed, 43 insertions(+), 4 deletions(-)
+
+diff --git a/src/libcalamares/locale/Label.cpp b/src/libcalamares/locale/Label.cpp
+index b4ec818..d16d9a6 100644
+--- a/src/libcalamares/locale/Label.cpp
++++ b/src/libcalamares/locale/Label.cpp
+@@ -10,7 +10,6 @@
+  */
+ 
+ #include "Label.h"
+-
+ namespace CalamaresUtils
+ {
+ namespace Locale
+@@ -47,6 +46,10 @@ Label::Label( const QString& locale, LabelFormat format, QObject* parent )
+     m_label = needsCountryName ? longFormat.arg( languageName, countryName ) : languageName;
+     m_englishLabel = needsCountryName ? longFormat.arg( englishName, QLocale::countryToString( m_locale.country() ) )
+                                       : englishName;
++    if (locale.contains("@valencia")){
++        m_label = "Valencià";
++        m_englishLabel = "Valencian";
++    }
+ }
+ 
+ QLocale
+diff --git a/src/libcalamares/utils/Retranslator.cpp b/src/libcalamares/utils/Retranslator.cpp
+index 46bafab..f3d0d94 100644
+--- a/src/libcalamares/utils/Retranslator.cpp
++++ b/src/libcalamares/utils/Retranslator.cpp
+@@ -13,12 +13,16 @@
+ #include "Settings.h"
+ #include "utils/Dirs.h"
+ #include "utils/Logger.h"
++#include "JobQueue.h"
++#include "GlobalStorage.h"
+ 
+ #include <QCoreApplication>
+ #include <QDir>
+ #include <QEvent>
+ #include <QTranslator>
+ 
++
++
+ static bool s_allowLocalTranslations = false;
+ 
+ /** @brief Helper class for loading translations
+@@ -45,6 +49,14 @@ struct TranslationLoader
+         {
+             localeName = QStringLiteral( "sr@latin" );
+         }
++	// Add support to valencian language
++        if (Calamares::JobQueue::instance() != nullptr ){
++            QVariant valencian = Calamares::JobQueue::instance()->globalStorage()->value(QStringLiteral("lliurex_valencian"));
++            if ( locale.language() == QLocale::Language::Catalan && valencian.toBool() )
++	    {
++                localeName = QStringLiteral( "ca@valencia" );
++            }
++        }
+         return localeName;
+     }
+ 
+diff --git a/src/modules/welcome/Config.cpp b/src/modules/welcome/Config.cpp
+index 097126e..b32af0a 100644
+--- a/src/modules/welcome/Config.cpp
++++ b/src/modules/welcome/Config.cpp
+@@ -9,6 +9,8 @@
+ 
+ #include "Config.h"
+ 
++
++#include "locale/Label.h"
+ #include "Branding.h"
+ #include "GlobalStorage.h"
+ #include "JobQueue.h"
+@@ -22,6 +24,7 @@
+ #include "utils/Variant.h"
+ 
+ #include <QFutureWatcher>
++#include <locale.h>
+ 
+ Config::Config( QObject* parent )
+     : QObject( parent )
+@@ -117,10 +120,24 @@ Config::initLanguages()
+     // Find the best initial translation
+     QLocale defaultLocale = QLocale( QLocale::system().name() );
+ 
+-    cDebug() << "Matching locale" << defaultLocale;
+-    int matchedLocaleIndex = m_languages->find( [&]( const QLocale& x ) {
+-        return x.language() == defaultLocale.language() && x.country() == defaultLocale.country();
++    int matchedLocaleIndex = -1;
++    char* valencian_char = setlocale(LC_ALL,"");
++    QString valencian = QString::fromLocal8Bit( valencian_char ) ;
++
++    if (valencian.contains(QStringLiteral("@valencia") )){
++    cDebug() << "Searching valencian " << valencian;
++    matchedLocaleIndex = m_languages->find( [&]( const CalamaresUtils::Locale::Label& x ) {
++        return x.englishLabel() == QStringLiteral("Valencian");
++    } );
++
++    }
++
++    if ( matchedLocaleIndex < 0 ){
++        cDebug() << "Matching locale" << defaultLocale;
++        matchedLocaleIndex = m_languages->find( [&]( const QLocale& x ) {
++            return x.language() == defaultLocale.language() && x.country() == defaultLocale.country();
+     } );
++    }
+ 
+     if ( matchedLocaleIndex < 0 )
+     {
+@@ -184,6 +201,13 @@ Config::setLocaleIndex( int index )
+ 
+     m_localeIndex = index;
+ 
++    if ( m_languages->locale( m_localeIndex ).englishLabel() == "Valencian" ){
++        Calamares::JobQueue::instance()->globalStorage()->insert(QStringLiteral( "lliurex_valencian" ), true);
++    }
++    else{
++        Calamares::JobQueue::instance()->globalStorage()->insert(QStringLiteral( "lliurex_valencian" ), false);
++    }
++
+     const auto& selectedLocale = m_languages->locale( m_localeIndex ).locale();
+     cDebug() << "Index" << index << "Selected locale" << selectedLocale;
+ 
