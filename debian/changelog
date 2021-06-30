@@ -1,3 +1,9 @@
+calamares (1:3.2.39-1edupals1+resolvpatch3) focal; urgency=medium
+
+  * Add patch to fix chroot resolv.conf on calamares
+
+ -- Raul Rodrigo Segura <raurodse@gmail.com>  Wed, 30 Jun 2021 22:08:03 +0200
+
 calamares (1:3.2.39-1edupals1+resolvpatch2) focal; urgency=medium
 
   * Dummy upgrade
