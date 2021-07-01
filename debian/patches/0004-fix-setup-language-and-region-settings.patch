@@ -1,0 +1,33 @@
+From: Raul Rodrigo Segura <raurodse@gmail.com>
+Date: Thu, 1 Jul 2021 12:20:49 +0200
+Subject: fix setup language and region settings
+
+---
+ src/modules/locale/Config.cpp | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/modules/locale/Config.cpp b/src/modules/locale/Config.cpp
+index 854d65e..998e75c 100644
+--- a/src/modules/locale/Config.cpp
++++ b/src/modules/locale/Config.cpp
+@@ -24,6 +24,7 @@
+ #include <QFile>
+ #include <QProcess>
+ #include <QTimeZone>
++#include <QVariant>
+ 
+ /** @brief Load supported locale keys
+  *
+@@ -288,6 +289,12 @@ Config::automaticLocaleConfiguration() const
+     {
+         return LocaleConfiguration();
+     }
++
++    QVariant valencian = Calamares::JobQueue::instance()->globalStorage()->value(QStringLiteral("lliurex_valencian"));
++    if ( valencian.toBool() )
++    {
++        return LocaleConfiguration(QStringLiteral("ca_ES.UTF-8@valencia"),QStringLiteral("ca_ES.UTF-8"));
++    }
+     return LocaleConfiguration::fromLanguageAndLocation(
+         QLocale().name(), supportedLocales(), currentLocation()->country() );
+ }

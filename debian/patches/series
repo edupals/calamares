@@ -1,3 +1,4 @@
 0001-apply-patch.patch
 0002-add-support-to-valencian-language.patch
 0003-add-patch-to-install-packages-on-live.patch
+0004-fix-setup-language-and-region-settings.patch
