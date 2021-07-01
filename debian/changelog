@@ -1,3 +1,9 @@
+calamares (1:3.2.39-1edupals1+resolvpatch4) focal; urgency=medium
+
+  * Add patch to fix language and region settings
+
+ -- Raul Rodrigo Segura <raurodse@gmail.com>  Thu, 01 Jul 2021 12:21:58 +0200
+
 calamares (1:3.2.39-1edupals1+resolvpatch3) focal; urgency=medium
 
   * Add patch to fix chroot resolv.conf on calamares
