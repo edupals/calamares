@@ -102,7 +102,7 @@ index 097126e..b32af0a 100644
 +    if (valencian.contains(QStringLiteral("@valencia") )){
 +    cDebug() << "Searching valencian " << valencian;
 +    matchedLocaleIndex = m_languages->find( [&]( const CalamaresUtils::Locale::Label& x ) {
-+        return x.englishLabel() == QStringLiteral("Valencian");
++        return x.englishLabel() == QStringLiteral("valencian");
 +    } );
 +
 +    }
@@ -120,7 +120,7 @@ index 097126e..b32af0a 100644
 
      m_localeIndex = index;
 
-+    if ( m_languages->locale( m_localeIndex ).englishLabel() == "Valencian" ){
++    if ( m_languages->locale( m_localeIndex ).englishLabel() == "valencian" ){
 +        Calamares::JobQueue::instance()->globalStorage()->insert(QStringLiteral( "lliurex_valencian" ), true);
 +    }
 +    else{
