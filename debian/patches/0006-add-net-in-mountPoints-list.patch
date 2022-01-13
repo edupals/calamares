@@ -1,0 +1,21 @@
+From: jrpelegrina <juapesai@hotmail.com>
+Date: Thu, 13 Jan 2022 11:36:17 +0100
+Subject: add /net in mountPoints list
+
+---
+ src/modules/partition/gui/PartitionDialogHelpers.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/modules/partition/gui/PartitionDialogHelpers.cpp b/src/modules/partition/gui/PartitionDialogHelpers.cpp
+index c5c3527..6c55002 100644
+--- a/src/modules/partition/gui/PartitionDialogHelpers.cpp
++++ b/src/modules/partition/gui/PartitionDialogHelpers.cpp
+@@ -23,7 +23,7 @@
+ QStringList
+ standardMountPoints()
+ {
+-    QStringList mountPoints { "/", "/boot", "/home", "/opt", "/srv", "/usr", "/var" };
++    QStringList mountPoints { "/", "/boot", "/home", "/opt", "/srv", "/usr", "/var", "/net" };
+     if ( PartUtils::isEfiSystem() )
+     {
+         mountPoints << Calamares::JobQueue::instance()->globalStorage()->value( "efiSystemPartition" ).toString();

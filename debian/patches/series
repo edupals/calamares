@@ -3,3 +3,4 @@
 0003-add-patch-to-install-packages-on-live.patch
 0004-fix-setup-language-and-region-settings.patch
 0005-replace-pkexec-with-sudo.patch
+0006-add-net-in-mountPoints-list.patch
