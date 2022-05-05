@@ -18,6 +18,7 @@
 #include "GlobalStorage.h"
 #include "JobQueue.h"
 #include "partition/FileSystem.h"
+#include "partition/Global.h"
 #include "partition/PartitionIterator.h"
 #include "utils/Logger.h"
 
@@ -103,14 +104,19 @@ mapForPartition( Partition* partition, const QString& uuid )
     // Debugging for inside the loop in createPartitionList(),
     // so indent a bit
     Logger::CDebug deb;
-    using TR = Logger::DebugRow< const char* const, const QString& >;
+    using TR = Logger::DebugRow< const char* const, const QString >;
+    // clang-format off
     deb << Logger::SubEntry << "mapping for" << partition->partitionPath() << partition->deviceNode()
-        << TR( "partlabel", map[ "partlabel" ].toString() ) << TR( "partuuid", map[ "partuuid" ].toString() )
-        << TR( "parttype", map[ "parttype" ].toString() ) << TR( "partattrs", map[ "partattrs" ].toString() )
-        << TR( "mountPoint:", PartitionInfo::mountPoint( partition ) ) << TR( "fs:", map[ "fs" ].toString() )
-        << TR( "fsName", map[ "fsName" ].toString() ) << TR( "uuid", uuid )
+        << TR( "partlabel", map[ "partlabel" ].toString() )
+        << TR( "partition-uuid (partuuid)", Logger::RedactedName( "PartUUID", map[ "partuuid" ].toString() ) )
+        << TR( "parttype", map[ "parttype" ].toString() )
+        << TR( "partattrs", map[ "partattrs" ].toString() )
+        << TR( "mountPoint:", PartitionInfo::mountPoint( partition ) )
+        << TR( "fs:", map[ "fs" ].toString() )
+        << TR( "fsName", map[ "fsName" ].toString() )
+        << TR( "filesystem-uuid (uuid)", Logger::RedactedName( "FSUUID", uuid ) )
         << TR( "claimed", map[ "claimed" ].toString() );
-
+    // clang-format on
     if ( partition->roles().has( PartitionRole::Luks ) )
     {
         const FileSystem& fsRef = partition->fileSystem();
@@ -263,7 +269,8 @@ FillGlobalStorageJob::prettyDescription() const
                                           "<strong>%2</strong>%4." )
                                           .arg( path )
                                           .arg( mountPoint )
-                                          .arg( fsType ) );
+                                          .arg( fsType )
+                                          .arg( QString() ) );
                     }
                 }
             }
@@ -291,35 +298,29 @@ FillGlobalStorageJob::prettyStatusMessage() const
  * .. mark as "1" if it's on the system, somewhere
  * .. mark as "2" if it's one of the claimed / in-use FSses
  *
- * Stores a GS key called "filesystems_use" with this mapping.
+ * Stores a GS key called "filesystem_use" with this mapping.
+ * @see CalamaresUtils::Partition::useFilesystemGS()
  */
 static void
 storeFSUse( Calamares::GlobalStorage* storage, const QVariantList& partitions )
 {
-    QMap< QString, int > fsUses;
-    for ( const auto& p : partitions )
+    if ( storage )
     {
-        const auto pmap = p.toMap();
-
-        QString fs = pmap.value( "fs" ).toString();
-        int thisUse = pmap.value( "claimed" ).toBool() ? 2 : 1;
-
-        if ( fs.isEmpty() )
+        CalamaresUtils::Partition::clearFilesystemGS( storage );
+        for ( const auto& p : partitions )
         {
-            continue;
+            const auto pmap = p.toMap();
+
+            QString fs = pmap.value( "fs" ).toString();
+
+            if ( fs.isEmpty() )
+            {
+                continue;
+            }
+
+            CalamaresUtils::Partition::useFilesystemGS( storage, fs, true );
         }
-
-        int newUse = qMax( fsUses.value( fs ), thisUse );  // value() is 0 if not present
-        fsUses.insert( fs, newUse );
     }
-
-    QVariantMap fsUsesVariant;
-    for ( auto it = fsUses.cbegin(); it != fsUses.cend(); ++it )
-    {
-        fsUsesVariant.insert( it.key(), it.value() );
-    }
-
-    storage->insert( "filesystems_use", fsUsesVariant );
 }
 
 Calamares::JobResult

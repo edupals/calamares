@@ -10,7 +10,7 @@
 #ifndef PARTITIONACTIONS_H
 #define PARTITIONACTIONS_H
 
-#include "core/Config.h"
+#include "Config.h"
 
 #include <QSet>
 #include <QString>
@@ -44,7 +44,7 @@ struct ReplacePartitionOptions
 struct AutoPartitionOptions : ReplacePartitionOptions
 {
     QString efiPartitionMountPoint;  // optional, e.g. "/boot"
-    quint64 requiredSpaceB;  // estimated required space for root partition
+    qint64 requiredSpaceB;  // estimated required space for root partition
     Config::SwapChoice swap;
 
     AutoPartitionOptions( const QString& pt,
@@ -55,7 +55,7 @@ struct AutoPartitionOptions : ReplacePartitionOptions
                           Config::SwapChoice s )
         : ReplacePartitionOptions( pt, fs, luks )
         , efiPartitionMountPoint( efi )
-        , requiredSpaceB( requiredBytes > 0 ? static_cast< quint64 >( requiredBytes ) : 0 )
+        , requiredSpaceB( requiredBytes > 0 ? requiredBytes : 0 )
         , swap( s )
     {
     }

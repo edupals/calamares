@@ -11,11 +11,13 @@
 #ifndef KPMHELPERS_H
 #define KPMHELPERS_H
 
-// KPMcore
+#include "Job.h"
+
 #include <kpmcore/core/partitiontable.h>
 #include <kpmcore/fs/filesystem.h>
+#include <kpmcore/ops/operation.h>
+#include <kpmcore/util/report.h>
 
-// Qt
 #include <QList>
 
 #include <functional>
@@ -55,6 +57,7 @@ Partition* createNewPartition( PartitionNode* parent,
                                const Device& device,
                                const PartitionRole& role,
                                FileSystem::Type fsType,
+                               const QString& fsLabel,
                                qint64 firstSector,
                                qint64 lastSector,
                                PartitionTable::Flags flags );
@@ -63,12 +66,31 @@ Partition* createNewEncryptedPartition( PartitionNode* parent,
                                         const Device& device,
                                         const PartitionRole& role,
                                         FileSystem::Type fsType,
+                                        const QString& fsLabel,
                                         qint64 firstSector,
                                         qint64 lastSector,
                                         const QString& passphrase,
                                         PartitionTable::Flags flags );
 
 Partition* clonePartition( Device* device, Partition* partition );
+
+/** @brief Return a result for an @p operation
+ *
+ * Executes the operation, and if successful, returns a success result.
+ * Otherwise returns an error using @p failureMessage as the primary part
+ * of the error, and details obtained from the operation.
+ */
+Calamares::JobResult execute( Operation& operation, const QString& failureMessage );
+/** @brief Return a result for an @p operation
+ *
+ * It's acceptable to use an rvalue: the operation-running is the effect
+ * you're interested in, rather than keeping the temporary around.
+ */
+static inline Calamares::JobResult
+execute( Operation&& operation, const QString& failureMessage )
+{
+    return execute( operation, failureMessage );
+}
 
 }  // namespace KPMHelpers
 

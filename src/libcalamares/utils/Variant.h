@@ -15,6 +15,7 @@
 
 #include "DllMacro.h"
 
+#include <QList>
 #include <QString>
 #include <QVariantMap>
 
@@ -25,15 +26,25 @@ namespace CalamaresUtils
  */
 DLLEXPORT bool getBool( const QVariantMap& map, const QString& key, bool d = false );
 
-/**
- * Get a string value from a mapping with a given key; returns @p d if no value.
+/** @brief Get a string value from a mapping with a given key; returns @p d if no value.
+ *
+ * The value must be an actual string; numbers are not automatically converted to strings,
+ * nor are lists flattened or converted.
  */
 DLLEXPORT QString getString( const QVariantMap& map, const QString& key, const QString& d = QString() );
 
-/**
- * Get a string list from a mapping with a given key; returns @p d if no value.
+/** @brief Get a string list from a mapping with a given key; returns @p d if no value.
+ *
+ * This is slightly more lenient than getString(), and a single-string value will
+ * be returned as a 1-item list.
  */
 DLLEXPORT QStringList getStringList( const QVariantMap& map, const QString& key, const QStringList& d = QStringList() );
+
+/**
+ * Get a list from a mapping with a given key; returns @p d if no value.
+ */
+DLLEXPORT QList< QVariant >
+getList( const QVariantMap& map, const QString& key, const QList< QVariant >& d = QList< QVariant >() );
 
 /**
  * Get an integer value from a mapping with a given key; returns @p d if no value.

@@ -22,6 +22,7 @@
 #include "core/PartitionInfo.h"
 #include "core/PartitionModel.h"
 #include "jobs/AutoMountManagementJob.h"
+#include "jobs/ChangeFilesystemLabelJob.h"
 #include "jobs/ClearMountsJob.h"
 #include "jobs/ClearTempMountsJob.h"
 #include "jobs/CreatePartitionJob.h"
@@ -36,7 +37,7 @@
 #include "jobs/ResizeVolumeGroupJob.h"
 #include "jobs/SetPartitionFlagsJob.h"
 
-#ifdef DEBUG_PARTITION_LAME
+#ifdef DEBUG_PARTITION_BAIL_OUT
 #include "JobExample.h"
 #endif
 #include "partition/PartitionIterator.h"
@@ -59,7 +60,6 @@
 // Qt
 #include <QDir>
 #include <QFutureWatcher>
-#include <QProcess>
 #include <QStandardItemModel>
 #include <QtConcurrent/QtConcurrent>
 
@@ -254,13 +254,22 @@ PartitionCoreModule::doInit()
     DeviceList devices = PartUtils::getDevices( PartUtils::DeviceType::WritableOnly );
 
     cDebug() << "LIST OF DETECTED DEVICES:";
-    cDebug() << "node\tcapacity\tname\tprettyName";
+    cDebug() << Logger::SubEntry << "node\tcapacity\tname\tprettyName";
     for ( auto device : devices )
     {
-        // Gives ownership of the Device* to the DeviceInfo object
-        auto deviceInfo = new DeviceInfo( device );
-        m_deviceInfos << deviceInfo;
-        cDebug() << device->deviceNode() << device->capacity() << device->name() << device->prettyName();
+        if ( device )
+        {
+            // Gives ownership of the Device* to the DeviceInfo object
+            auto deviceInfo = new DeviceInfo( device );
+            m_deviceInfos << deviceInfo;
+            cDebug() << Logger::SubEntry << device->deviceNode() << device->capacity()
+                     << Logger::RedactedName( "DevName", device->name() )
+                     << Logger::RedactedName( "DevNamePretty", device->prettyName() );
+        }
+        else
+        {
+            cDebug() << Logger::SubEntry << "(skipped null device)";
+        }
     }
     cDebug() << Logger::SubEntry << devices.count() << "devices detected.";
     m_deviceModel->init( devices );
@@ -339,7 +348,7 @@ PartitionCoreModule::deviceModel() const
     return m_deviceModel;
 }
 
-QAbstractItemModel*
+BootLoaderModel*
 PartitionCoreModule::bootLoaderModel() const
 {
     return m_bootLoaderModel;
@@ -542,6 +551,16 @@ PartitionCoreModule::formatPartition( Device* device, Partition* partition )
 }
 
 void
+PartitionCoreModule::setFilesystemLabel( Device* device, Partition* partition, const QString& newLabel )
+{
+    auto deviceInfo = infoForDevice( device );
+    Q_ASSERT( deviceInfo );
+
+    OperationHelper helper( partitionModelForDevice( device ), this );
+    deviceInfo->makeJob< ChangeFilesystemLabelJob >( partition, newLabel );
+}
+
+void
 PartitionCoreModule::resizePartition( Device* device, Partition* partition, qint64 first, qint64 last )
 {
     auto* deviceInfo = infoForDevice( device );
@@ -560,6 +579,42 @@ PartitionCoreModule::setPartitionFlags( Device* device, Partition* partition, Pa
     PartitionInfo::setFlags( partition, flags );
 }
 
+STATICTEST QStringList
+findEssentialLVs( const QList< PartitionCoreModule::DeviceInfo* >& infos )
+{
+    QStringList doNotClose;
+    cDebug() << "Checking LVM use on" << infos.count() << "devices";
+    for ( const auto* info : infos )
+    {
+        if ( info->device->type() != Device::Type::LVM_Device )
+        {
+            continue;
+        }
+
+        for ( const auto& j : qAsConst( info->jobs() ) )
+        {
+            FormatPartitionJob* format = dynamic_cast< FormatPartitionJob* >( j.data() );
+            if ( format )
+            {
+                // device->deviceNode() is /dev/<vg name>
+                // partition()->partitionPath() is /dev/<vg name>/<lv>
+                const auto* partition = format->partition();
+                const QString partPath = partition->partitionPath();
+                const QString devicePath = info->device->deviceNode() + '/';
+                const bool isLvm = partition->roles().has( PartitionRole::Lvm_Lv );
+                if ( isLvm && partPath.startsWith( devicePath ) )
+                {
+                    cDebug() << Logger::SubEntry << partPath
+                             << "is an essential LV filesystem=" << partition->fileSystem().type();
+                    QString lvName = partPath.right( partPath.length() - devicePath.length() );
+                    doNotClose.append( info->device->name() + '-' + lvName );
+                }
+            }
+        }
+    }
+    return doNotClose;
+}
+
 Calamares::JobList
 PartitionCoreModule::jobs( const Config* config ) const
 {
@@ -567,7 +622,7 @@ PartitionCoreModule::jobs( const Config* config ) const
     QList< Device* > devices;
 
 #ifdef DEBUG_PARTITION_UNSAFE
-#ifdef DEBUG_PARTITION_LAME
+#ifdef DEBUG_PARTITION_BAIL_OUT
     cDebug() << "Unsafe partitioning is enabled.";
     cDebug() << Logger::SubEntry << "it has been lamed, and will fail.";
     lst << Calamares::job_ptr( new Calamares::FailJob( QStringLiteral( "Partition" ) ) );
@@ -584,17 +639,29 @@ PartitionCoreModule::jobs( const Config* config ) const
     lst << automountControl;
     lst << Calamares::job_ptr( new ClearTempMountsJob() );
 
-    for ( auto info : m_deviceInfos )
+#ifdef DEBUG_PARTITION_SKIP
+    cWarning() << "Partitioning actions are skipped.";
+#else
+    const QStringList doNotClose = findEssentialLVs( m_deviceInfos );
+
+    for ( const auto* info : m_deviceInfos )
     {
         if ( info->isDirty() )
         {
-            lst << Calamares::job_ptr( new ClearMountsJob( info->device.data() ) );
+            auto* job = new ClearMountsJob( info->device.data() );
+            job->setMapperExceptions( doNotClose );
+            lst << Calamares::job_ptr( job );
         }
     }
+#endif
 
-    for ( auto info : m_deviceInfos )
+    for ( const auto* info : m_deviceInfos )
     {
+#ifdef DEBUG_PARTITION_SKIP
+        cWarning() << Logger::SubEntry << "Skipping jobs for" << info->device.data()->deviceNode();
+#else
         lst << info->jobs();
+#endif
         devices << info->device.data();
     }
     lst << Calamares::job_ptr( new FillGlobalStorageJob( config, devices, m_bootLoaderInstallPath ) );
@@ -624,9 +691,8 @@ PartitionCoreModule::lvmPVs() const
 bool
 PartitionCoreModule::hasVGwithThisName( const QString& name ) const
 {
-    auto condition = [name]( DeviceInfo* d ) {
-        return dynamic_cast< LvmDevice* >( d->device.data() ) && d->device.data()->name() == name;
-    };
+    auto condition = [ name ]( DeviceInfo* d )
+    { return dynamic_cast< LvmDevice* >( d->device.data() ) && d->device.data()->name() == name; };
 
     return std::find_if( m_deviceInfos.begin(), m_deviceInfos.end(), condition ) != m_deviceInfos.end();
 }
@@ -634,7 +700,8 @@ PartitionCoreModule::hasVGwithThisName( const QString& name ) const
 bool
 PartitionCoreModule::isInVG( const Partition* partition ) const
 {
-    auto condition = [partition]( DeviceInfo* d ) {
+    auto condition = [ partition ]( DeviceInfo* d )
+    {
         LvmDevice* vg = dynamic_cast< LvmDevice* >( d->device.data() );
         return vg && vg->physicalVolumes().contains( partition );
     };
@@ -648,10 +715,10 @@ PartitionCoreModule::dumpQueue() const
     cDebug() << "# Queue:";
     for ( auto info : m_deviceInfos )
     {
-        cDebug() << "## Device:" << info->device->name();
+        cDebug() << Logger::SubEntry << "## Device:" << info->device->deviceNode();
         for ( const auto& job : info->jobs() )
         {
-            cDebug() << "-" << job->prettyName();
+            cDebug() << Logger::SubEntry << "-" << job->metaObject()->className();
         }
     }
 }
@@ -667,7 +734,7 @@ void
 PartitionCoreModule::refreshPartition( Device* device, Partition* )
 {
     // Keep it simple for now: reset the model. This can be improved to cause
-    // the model to emit dataChanged() for the affected row instead, avoiding
+    // the model to Q_EMIT dataChanged() for the affected row instead, avoiding
     // the loss of the current selection.
     auto model = partitionModelForDevice( device );
     Q_ASSERT( model );
@@ -874,10 +941,13 @@ PartitionCoreModule::setBootLoaderInstallPath( const QString& path )
     m_bootLoaderInstallPath = path;
 }
 
-void
-PartitionCoreModule::initLayout( FileSystem::Type defaultFsType, const QVariantList& config )
+static void
+applyDefaultLabel( Partition* p, bool ( *predicate )( const Partition* ), const QString& label )
 {
-    m_partLayout.init( defaultFsType, config );
+    if ( p->label().isEmpty() && predicate( p ) )
+    {
+        p->setLabel( label );
+    }
 }
 
 void
@@ -896,21 +966,28 @@ PartitionCoreModule::layoutApply( Device* dev,
     // PartitionInfo::mountPoint() says where it will be mounted in the target system.
     // .. the latter is more interesting.
     //
-    // If we have a separate /boot, mark that one as bootable, otherwise mark
-    // the root / as bootable.
+    // If we have a separate /boot, mark that one as bootable,
+    // otherwise mark the root / as bootable.
     //
-    // TODO: perhaps the partition that holds the bootloader?
-    const QString boot = QStringLiteral( "/boot" );
-    const QString root = QStringLiteral( "/" );
-    const auto is_boot
-        = [&]( Partition* p ) -> bool { return PartitionInfo::mountPoint( p ) == boot || p->mountPoint() == boot; };
-    const auto is_root
-        = [&]( Partition* p ) -> bool { return PartitionInfo::mountPoint( p ) == root || p->mountPoint() == root; };
+    // If the layout hasn't applied a label to the partition,
+    //      apply a default label (to boot and root, at least).
+    const auto is_boot = []( const Partition* p ) -> bool
+    {
+        const QString boot = QStringLiteral( "/boot" );
+        return PartitionInfo::mountPoint( p ) == boot || p->mountPoint() == boot;
+    };
+    const auto is_root = []( const Partition* p ) -> bool
+    {
+        const QString root = QStringLiteral( "/" );
+        return PartitionInfo::mountPoint( p ) == root || p->mountPoint() == root;
+    };
 
     const bool separate_boot_partition
         = std::find_if( partList.constBegin(), partList.constEnd(), is_boot ) != partList.constEnd();
     for ( Partition* part : partList )
     {
+        applyDefaultLabel( part, is_root, QStringLiteral( "root" ) );
+        applyDefaultLabel( part, is_boot, QStringLiteral( "boot" ) );
         if ( ( separate_boot_partition && is_boot( part ) ) || ( !separate_boot_partition && is_root( part ) ) )
         {
             createPartition(
@@ -938,7 +1015,7 @@ PartitionCoreModule::revert()
     m_deviceInfos.clear();
     doInit();
     updateIsDirty();
-    emit reverted();
+    Q_EMIT reverted();
 }
 
 
@@ -1012,7 +1089,7 @@ PartitionCoreModule::revertDevice( Device* dev, bool individualRevert )
     {
         refreshAfterModelChange();
     }
-    emit deviceReverted( newDev );
+    Q_EMIT deviceReverted( newDev );
 }
 
 
@@ -1020,10 +1097,14 @@ void
 PartitionCoreModule::asyncRevertDevice( Device* dev, std::function< void() > callback )
 {
     QFutureWatcher< void >* watcher = new QFutureWatcher< void >();
-    connect( watcher, &QFutureWatcher< void >::finished, this, [watcher, callback] {
-        callback();
-        watcher->deleteLater();
-    } );
+    connect( watcher,
+             &QFutureWatcher< void >::finished,
+             this,
+             [ watcher, callback ]
+             {
+                 callback();
+                 watcher->deleteLater();
+             } );
 
     QFuture< void > future = QtConcurrent::run( this, &PartitionCoreModule::revertDevice, dev, true );
     watcher->setFuture( future );

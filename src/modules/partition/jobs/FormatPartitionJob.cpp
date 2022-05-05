@@ -11,7 +11,10 @@
 
 #include "FormatPartitionJob.h"
 
+#include "core/KPMHelpers.h"
+
 #include "partition/FileSystem.h"
+#include "utils/CalamaresUtilsSystem.h"
 #include "utils/Logger.h"
 
 #include <kpmcore/core/device.h>
@@ -55,27 +58,31 @@ FormatPartitionJob::prettyDescription() const
 QString
 FormatPartitionJob::prettyStatusMessage() const
 {
+    QString partitionLabel = m_partition->label().isEmpty()
+        ? m_partition->partitionPath()
+        : tr( "%1 (%2)", "partition label %1 (device path %2)" )
+              .arg( m_partition->label(), m_partition->partitionPath() );
     return tr( "Formatting partition %1 with "
                "file system %2." )
-        .arg( m_partition->partitionPath() )
-        .arg( userVisibleFS( m_partition->fileSystem() ) );
+        .arg( partitionLabel, userVisibleFS( m_partition->fileSystem() ) );
 }
 
 
 Calamares::JobResult
 FormatPartitionJob::exec()
 {
-    Report report( nullptr );  // Root of the report tree, no parent
-    CreateFileSystemOperation op( *m_device, *m_partition, m_partition->fileSystem().type() );
-    op.setStatus( Operation::StatusRunning );
-
-    QString message = tr( "The installer failed to format partition %1 on disk '%2'." )
-                          .arg( m_partition->partitionPath(), m_device->name() );
-
-    if ( op.execute( report ) )
+    const auto fsType = m_partition->fileSystem().type();
+    auto r = KPMHelpers::execute( CreateFileSystemOperation( *m_device, *m_partition, fsType ),
+                                  tr( "The installer failed to format partition %1 on disk '%2'." )
+                                      .arg( m_partition->partitionPath(), m_device->name() ) );
+    if ( fsType == FileSystem::Xfs && r.succeeded() )
     {
-        return Calamares::JobResult::ok();
+        // We are going to try to set modern timestamps for the filesystem,
+        // (ignoring whether this succeeds). Requires a sufficiently-new
+        // xfs_admin and xfs_repair and might be made obsolete by newer
+        // kpmcore releases.
+        CalamaresUtils::System::runCommand( { "xfs_admin", "-O", "bigtime=1", m_partition->partitionPath() },
+                                            std::chrono::seconds( 60 ) );
     }
-
-    return Calamares::JobResult::error( message, report.toText() );
+    return r;
 }

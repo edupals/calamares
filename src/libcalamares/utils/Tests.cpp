@@ -13,6 +13,7 @@
 #include "Entropy.h"
 #include "Logger.h"
 #include "RAII.h"
+#include "Runner.h"
 #include "String.h"
 #include "Traits.h"
 #include "UMask.h"
@@ -46,28 +47,41 @@ private Q_SLOTS:
 
     void testCommands();
 
-    /** @brief Test that all the UMask objects work correctly. */
+    /** @section Test that all the UMask objects work correctly. */
     void testUmask();
 
-    /** @brief Tests the entropy functions. */
+    /** @section Tests the entropy functions. */
     void testEntropy();
     void testPrintableEntropy();
     void testOddSizedPrintable();
 
-    /** @brief Tests the RAII bits. */
-    void testBoolSetter();
+    /** @section Tests the RAII bits. */
+    void testPointerSetter();
 
-    /** @brief Tests the Traits bits. */
+    /** @section Tests the Traits bits. */
     void testTraits();
 
+    /** @section Testing the variants-methods */
     void testVariantStringListCode();
     void testVariantStringListYAMLDashed();
     void testVariantStringListYAMLBracketed();
 
-    /** @brief Test smart string truncation. */
+    /** @section Test smart string truncation. */
     void testStringTruncation();
     void testStringTruncationShorter();
     void testStringTruncationDegenerate();
+    void testStringRemoveLeading_data();
+    void testStringRemoveLeading();
+    void testStringRemoveTrailing_data();
+    void testStringRemoveTrailing();
+
+    /** @section Test Runner directory-manipulation. */
+    void testRunnerDirs();
+    void testCalculateWorkingDirectory();
+    void testRunnerOutput();
+
+    /** @section Test file-functions */
+    void testReadWriteFile();
 
 private:
     void recursiveCompareMap( const QVariantMap& a, const QVariantMap& b, int depth );
@@ -339,26 +353,48 @@ LibCalamaresTests::testOddSizedPrintable()
 }
 
 void
-LibCalamaresTests::testBoolSetter()
+LibCalamaresTests::testPointerSetter()
 {
-    bool b = false;
+    int special = 17;
 
-    QVERIFY( !b );
+    QCOMPARE( special, 17 );
     {
-        QVERIFY( !b );
-        cBoolSetter< true > x( b );
-        QVERIFY( b );
+        cScopedAssignment p( &special );
     }
-    QVERIFY( !b );
-
-    QVERIFY( !b );
+    QCOMPARE( special, 17 );
     {
-        QVERIFY( !b );
-        cBoolSetter< false > x( b );
-        QVERIFY( !b );  // Still!
+        cScopedAssignment p( &special );
+        p = 18;
     }
-    QVERIFY( b );
+    QCOMPARE( special, 18 );
+    {
+        cScopedAssignment p( &special );
+        p = 20;
+        p = 3;
+    }
+    QCOMPARE( special, 3 );
+    {
+        cScopedAssignment< int > p( nullptr );
+    }
+    QCOMPARE( special, 3 );
+    {
+        // "don't do this" .. order of destructors is important
+        cScopedAssignment p( &special );
+        cScopedAssignment q( &special );
+        p = 17;
+    }
+    QCOMPARE( special, 17 );
+    {
+        // "don't do this" .. order of destructors is important
+        cScopedAssignment p( &special );
+        cScopedAssignment q( &special );
+        p = 34;
+        q = 2;
+        // q destroyed first, then p
+    }
+    QCOMPARE( special, 34 );
 }
+
 
 /* Demonstration of Traits support for has-a-method or not.
  *
@@ -431,17 +467,30 @@ LibCalamaresTests::testVariantStringListCode()
         QCOMPARE( getStringList( m, key ), QStringList {} );
         m.insert( key, 17 );
         QCOMPARE( getStringList( m, key ), QStringList {} );
-        m.insert( key, QString( "more strings" ) );
-        QCOMPARE( getStringList( m, key ),
-                  QStringList { "more strings" } );  // A single string **can** be considered a stringlist!
         m.insert( key, QVariant {} );
         QCOMPARE( getStringList( m, key ), QStringList {} );
     }
 
     {
-        // Things that are stringlists
+        // Things that are **like** stringlists
+        QVariantMap m;
+        m.insert( key, QString( "astring" ) );
+        QCOMPARE( getStringList( m, key ).count(), 1 );
+        QCOMPARE( getStringList( m, key ),
+                  QStringList { "astring" } );  // A single string **can** be considered a stringlist!
+        m.insert( key, QString( "more strings" ) );
+        QCOMPARE( getStringList( m, key ).count(), 1 );
+        QCOMPARE( getStringList( m, key ), QStringList { "more strings" } );
+        m.insert( key, QString() );
+        QCOMPARE( getStringList( m, key ).count(), 1 );
+        QCOMPARE( getStringList( m, key ), QStringList { QString() } );
+    }
+
+    {
+        // Things that are definitely stringlists
         QVariantMap m;
         m.insert( key, QStringList { "aap", "noot" } );
+        QCOMPARE( getStringList( m, key ).count(), 2 );
         QVERIFY( getStringList( m, key ).contains( "aap" ) );
         QVERIFY( !getStringList( m, key ).contains( "mies" ) );
     }
@@ -706,6 +755,341 @@ LibCalamaresTests::testStringTruncationDegenerate()
 
         auto t = truncateMultiLine( longString, LinesStartEnd { 2, 2 }, CharCount { quiteShort } );
         QCOMPARE( s, t );
+    }
+}
+
+void
+LibCalamaresTests::testStringRemoveLeading_data()
+{
+    QTest::addColumn< QString >( "string" );
+    QTest::addColumn< char >( "c" );
+    QTest::addColumn< QString >( "result" );
+
+    QTest::newRow( "empty" ) << QString() << '/' << QString();
+    QTest::newRow( "one-slash" ) << QStringLiteral( "/tmp" ) << '/' << QStringLiteral( "tmp" );
+    QTest::newRow( "two-slash" ) << QStringLiteral( "//tmp" ) << '/' << QStringLiteral( "tmp" );
+    QTest::newRow( "multi-slash" ) << QStringLiteral( "/tmp/p" ) << '/' << QStringLiteral( "tmp/p" );
+    QTest::newRow( "later-slash" ) << QStringLiteral( "@/tmp" ) << '/' << QStringLiteral( "@/tmp" );
+    QTest::newRow( "all-one-slash" ) << QStringLiteral( "/" ) << '/' << QString();
+    QTest::newRow( "all-many-slash" ) << QStringLiteral( "////////////////////" ) << '/' << QString();
+    QTest::newRow( "trailing" ) << QStringLiteral( "tmp/" ) << '/' << QStringLiteral( "tmp/" );
+}
+
+void
+LibCalamaresTests::testStringRemoveLeading()
+{
+    QFETCH( QString, string );
+    QFETCH( char, c );
+    QFETCH( QString, result );
+
+    const QString initial = string;
+    CalamaresUtils::removeLeading( string, c );
+    QCOMPARE( string, result );
+}
+
+void
+LibCalamaresTests::testStringRemoveTrailing_data()
+{
+    QTest::addColumn< QString >( "string" );
+    QTest::addColumn< char >( "c" );
+    QTest::addColumn< QString >( "result" );
+
+    QTest::newRow( "empty" ) << QString() << '/' << QString();
+    QTest::newRow( "one-slash" ) << QStringLiteral( "/tmp" ) << '/' << QStringLiteral( "/tmp" );
+    QTest::newRow( "two-slash" ) << QStringLiteral( "//tmp" ) << '/' << QStringLiteral( "//tmp" );
+    QTest::newRow( "multi-slash" ) << QStringLiteral( "/tmp//p/" ) << '/' << QStringLiteral( "/tmp//p" );
+    QTest::newRow( "later-slash" ) << QStringLiteral( "@/tmp/@" ) << '/' << QStringLiteral( "@/tmp/@" );
+    QTest::newRow( "later-slash2" ) << QStringLiteral( "@/tmp/@//" ) << '/' << QStringLiteral( "@/tmp/@" );
+    QTest::newRow( "all-one-slash" ) << QStringLiteral( "/" ) << '/' << QString();
+    QTest::newRow( "all-many-slash" ) << QStringLiteral( "////////////////////" ) << '/' << QString();
+    QTest::newRow( "trailing" ) << QStringLiteral( "tmp/" ) << '/' << QStringLiteral( "tmp" );
+}
+
+void
+LibCalamaresTests::testStringRemoveTrailing()
+{
+    QFETCH( QString, string );
+    QFETCH( char, c );
+    QFETCH( QString, result );
+
+    const QString initial = string;
+    CalamaresUtils::removeTrailing( string, c );
+    QCOMPARE( string, result );
+}
+
+static QString
+dirname( const QTemporaryDir& d )
+{
+    return d.path().split( '/' ).last();
+}
+static QString
+dirname( const QDir& d )
+{
+    return d.absolutePath().split( '/' ).last();
+}
+
+// Method under test
+extern bool relativeChangeDirectory( QDir& directory, const QString& subdir );
+
+void
+LibCalamaresTests::testRunnerDirs()
+{
+    Logger::setupLogLevel( Logger::LOGDEBUG );
+
+    QDir startDir( QDir::current() );
+    QTemporaryDir tempDir( "./utilstest" );
+    QVERIFY( tempDir.isValid() );
+    QVERIFY( startDir.isReadable() );
+
+    // Test changing "downward"
+    {
+        QDir testDir( QDir::current() );
+        QCOMPARE( startDir, testDir );
+    }
+
+    {
+        QDir testDir( QDir::current() );
+        const bool could_change_to_dot = relativeChangeDirectory( testDir, QStringLiteral( "." ) );
+        QVERIFY( could_change_to_dot );
+        QCOMPARE( startDir, testDir );
+    }
+
+    {
+        // The tempDir was created inside the current directory, we want only the subdir-name
+        QDir testDir( QDir::current() );
+        const bool could_change_to_temp = relativeChangeDirectory( testDir, dirname( tempDir ) );
+        QVERIFY( could_change_to_temp );
+        QVERIFY( startDir != testDir );
+        QVERIFY( testDir.absolutePath().startsWith( startDir.absolutePath() ) );
+    }
+
+    // Test changing to something that doesn't exist
+    {
+        QDir testDir( QDir::current() );
+        const bool could_change_to_bogus = relativeChangeDirectory( testDir, QStringLiteral( "bogus" ) );
+        QVERIFY( !could_change_to_bogus );
+        QCOMPARE( startDir, testDir );  // Must be unchanged
+    }
+
+    // Testing escape-from-start
+    {
+        // Escape briefly from the start
+        QDir testDir( QDir::current() );
+        const bool could_change_to_current
+            = relativeChangeDirectory( testDir, QStringLiteral( "../" ) + dirname( startDir ) );
+        QVERIFY( could_change_to_current );
+        QCOMPARE( startDir, testDir );  // The change succeeded, but net effect is zero
+
+        const bool could_change_to_temp = relativeChangeDirectory(
+            testDir, QStringLiteral( "../" ) + dirname( startDir ) + QStringLiteral( "/./" ) + dirname( tempDir ) );
+        QVERIFY( could_change_to_temp );
+        QVERIFY( startDir != testDir );
+        QVERIFY( testDir.absolutePath().startsWith( startDir.absolutePath() ) );
+    }
+
+    {
+        // Escape?
+        QDir testDir( QDir::current() );
+        const bool could_change_to_parent = relativeChangeDirectory( testDir, QStringLiteral( "../" ) );
+        QVERIFY( !could_change_to_parent );
+        QCOMPARE( startDir, testDir );  // Change failed
+
+        const bool could_change_to_tmp = relativeChangeDirectory( testDir, QStringLiteral( "/tmp" ) );
+        QVERIFY( !could_change_to_tmp );
+        QCOMPARE( startDir, testDir );
+
+        const bool could_change_to_elsewhere = relativeChangeDirectory( testDir, QStringLiteral( "../src" ) );
+        QVERIFY( !could_change_to_elsewhere );
+        QCOMPARE( startDir, testDir );
+    }
+}
+
+// Method under test
+extern std::pair< bool, QDir > calculateWorkingDirectory( Calamares::Utils::RunLocation location,
+                                                          const QString& directory );
+
+void
+LibCalamaresTests::testCalculateWorkingDirectory()
+{
+    Calamares::GlobalStorage* gs
+        = Calamares::JobQueue::instance() ? Calamares::JobQueue::instance()->globalStorage() : nullptr;
+
+    if ( !gs )
+    {
+        cDebug() << "Creating new JobQueue";
+        (void)new Calamares::JobQueue();
+        gs = Calamares::JobQueue::instance() ? Calamares::JobQueue::instance()->globalStorage() : nullptr;
+    }
+    QVERIFY( gs );
+
+    // Working with a rootMountPoint set
+    QTemporaryDir tempRoot( QDir::tempPath() + QStringLiteral( "/test-job-XXXXXX" ) );
+    gs->insert( "rootMountPoint", tempRoot.path() );
+
+    {
+        auto [ ok, d ] = calculateWorkingDirectory( CalamaresUtils::System::RunLocation::RunInHost, QString() );
+        QVERIFY( ok );
+        QCOMPARE( d, QDir::current() );
+    }
+    {
+        auto [ ok, d ] = calculateWorkingDirectory( CalamaresUtils::System::RunLocation::RunInTarget, QString() );
+        QVERIFY( ok );
+        QCOMPARE( d.absolutePath(), tempRoot.path() );
+    }
+
+    gs->remove( "rootMountPoint" );
+    {
+        auto [ ok, d ] = calculateWorkingDirectory( CalamaresUtils::System::RunLocation::RunInHost, QString() );
+        QVERIFY( ok );
+        QCOMPARE( d, QDir::current() );
+    }
+    {
+        auto [ ok, d ] = calculateWorkingDirectory( CalamaresUtils::System::RunLocation::RunInTarget, QString() );
+        QVERIFY( !ok );
+        QCOMPARE( d, QDir::current() );
+    }
+}
+
+void
+LibCalamaresTests::testRunnerOutput()
+{
+    cDebug() << "Testing ls";
+    {
+        Calamares::Utils::Runner r( { "ls", "-d", "." } );
+        QSignalSpy spy( &r, &decltype( r )::output );
+        r.enableOutputProcessing();
+
+        auto result = r.run();
+        QCOMPARE( result.getExitCode(), 0 );
+        QCOMPARE( result.getOutput(), QString() );
+        QCOMPARE( spy.count(), 1 );
+    }
+
+    cDebug() << "Testing cat";
+    {
+        Calamares::Utils::Runner r( { "cat" } );
+        QSignalSpy spy( &r, &decltype( r )::output );
+        r.enableOutputProcessing().setInput( QStringLiteral( "hello\nworld\n\n!\n" ) );
+
+        {
+            auto result = r.run();
+            QCOMPARE( result.getExitCode(), 0 );
+            QCOMPARE( result.getOutput(), QString() );
+            QCOMPARE( spy.count(), 4 );
+        }
+
+        r.setInput( QStringLiteral( "yo\ndogg" ) );
+        {
+            auto result = r.run();
+            QCOMPARE( result.getExitCode(), 0 );
+            QCOMPARE( result.getOutput(), QString() );
+            QCOMPARE( spy.count(), 6 );  // 4 from before, +2 here
+        }
+    }
+
+    cDebug() << "Testing cat (again)";
+    {
+        QStringList collectedOutput;
+
+        Calamares::Utils::Runner r( { "cat" } );
+        r.enableOutputProcessing().setInput( QStringLiteral( "hello\nworld\n\n!\n" ) );
+        QObject::connect( &r, &decltype( r )::output, [&collectedOutput]( QString s ) { collectedOutput << s; } );
+
+        {
+            auto result = r.run();
+            QCOMPARE( result.getExitCode(), 0 );
+            QCOMPARE( result.getOutput(), QString() );
+            QCOMPARE( collectedOutput.count(), 4 );
+            QVERIFY( collectedOutput.contains( QStringLiteral( "world\n" ) ) );
+        }
+
+        r.setInput( QStringLiteral( "yo\ndogg" ) );
+        {
+            auto result = r.run();
+            QCOMPARE( result.getExitCode(), 0 );
+            QCOMPARE( result.getOutput(), QString() );
+            QCOMPARE( collectedOutput.count(), 6 );
+            QVERIFY( collectedOutput.contains( QStringLiteral( "dogg" ) ) );  // no newline
+        }
+    }
+}
+
+
+CalamaresUtils::System*
+file_setup( const QTemporaryDir& tempRoot )
+{
+    CalamaresUtils::System* ss = CalamaresUtils::System::instance();
+    if ( !ss )
+    {
+        ss = new CalamaresUtils::System( true );
+    }
+
+    Calamares::GlobalStorage* gs
+        = Calamares::JobQueue::instance() ? Calamares::JobQueue::instance()->globalStorage() : nullptr;
+    if ( !gs )
+    {
+        cDebug() << "Creating new JobQueue";
+        (void)new Calamares::JobQueue();
+        gs = Calamares::JobQueue::instance() ? Calamares::JobQueue::instance()->globalStorage() : nullptr;
+    }
+    if ( gs )
+    {
+        // Working with a rootMountPoint set
+        gs->insert( "rootMountPoint", tempRoot.path() );
+    }
+    return ss;
+}
+
+void
+LibCalamaresTests::testReadWriteFile()
+{
+    static const QByteArray otherContents( "first\nsecond\n" );
+
+    QTemporaryDir tempRoot( QDir::tempPath() + QStringLiteral( "/test-job-XXXXXX" ) );
+    auto* ss = file_setup( tempRoot );
+
+    QVERIFY( ss );
+    {
+        auto fullPath = ss->createTargetFile( "test0", QByteArray(), CalamaresUtils::System::WriteMode::Overwrite );
+        QVERIFY( fullPath );
+        QVERIFY( !fullPath.path().isEmpty() );
+
+        QFileInfo fi( fullPath.path() );
+        QVERIFY( fi.exists() );
+        QVERIFY( fi.isFile() );
+        QCOMPARE( fi.size(), 0 );
+    }
+    // It won't overwrite unless you ask for it
+    {
+        auto fullPath = ss->createTargetFile( "test0", otherContents );
+        QVERIFY( !fullPath );  // Failed, because it won't overwrite
+        QCOMPARE( fullPath.code(), decltype( fullPath )::Code::AlreadyExists );
+        QVERIFY( fullPath.path().isEmpty() );  // Because it wasn't written
+
+        QFileInfo fi( tempRoot.filePath( "test0" ) );  // Compute the name some other way
+        QVERIFY( fi.exists() );
+        QVERIFY( fi.isFile() );
+        QCOMPARE( fi.size(), 0 );
+    }
+    // But it will if you say so explicitly
+    {
+        auto fullPath = ss->createTargetFile( "test0", otherContents, CalamaresUtils::System::WriteMode::Overwrite );
+        QVERIFY( fullPath );
+        QVERIFY( !fullPath.path().isEmpty() );
+
+        QFileInfo fi( fullPath.path() );
+        QVERIFY( fi.exists() );
+        QVERIFY( fi.isFile() );
+        QCOMPARE( fi.size(), 13 );
+    }
+
+    // Now it's been written, we can read it, too
+    {
+        auto contents = ss->readTargetFile( "test0" );
+        QVERIFY( !contents.isEmpty() );
+        QCOMPARE( contents.count(), 2 );
+        QCOMPARE( contents[ 0 ], QStringLiteral( "first" ) );  // No trailing \n
+        QCOMPARE( contents[ 1 ], QStringLiteral( "second" ) );  // No trailing \n
     }
 }
 

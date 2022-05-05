@@ -47,8 +47,6 @@ enum
     LOG_DISABLE = 0,
     LOGERROR = 1,
     LOGWARNING = 2,
-    LOGINFO = 3,
-    LOGEXTRA = 5,
     LOGDEBUG = 6,
     LOGVERBOSE = 8
 };
@@ -60,7 +58,9 @@ public:
     virtual ~CDebug();
 
     friend CDebug& operator<<( CDebug&&, const FuncSuppressor& );
-    friend CDebug& operator<<( CDebug&&, Once& );
+    friend CDebug& operator<<( CDebug&&, const Once& );
+
+    inline unsigned int level() const { return m_debugLevel; }
 
 private:
     QString m_msg;
@@ -71,8 +71,11 @@ private:
 inline CDebug&
 operator<<( CDebug&& s, const FuncSuppressor& f )
 {
-    s.m_funcinfo = nullptr;
-    s << f.m_s;
+    if ( s.m_funcinfo )
+    {
+        s.m_funcinfo = nullptr;
+        s.m_msg = QString( f.m_s );
+    }
     return s;
 }
 
@@ -145,8 +148,8 @@ public:
     {
     }
 
-    const T& first;
-    const U& second;
+    const T first;
+    const U second;
 };
 
 /**
@@ -206,6 +209,49 @@ public:
 
     const QVariantMap& map;
 };
+
+/** @brief When logging commands, don't log everything.
+ *
+ * The command-line arguments to some commands may contain the
+ * encrypted password set by the user. Don't log that password,
+ * since the log may get posted to bug reports, or stored in
+ * the target system.
+ */
+struct RedactedCommand
+{
+    RedactedCommand( const QStringList& l )
+        : list( l )
+    {
+    }
+
+    const QStringList& list;
+};
+
+QDebug& operator<<( QDebug& s, const RedactedCommand& l );
+
+/** @brief When logging "private" identifiers, keep them consistent but private
+ *
+ * Send a string to a logger in such a way that each time it is logged,
+ * it logs the same way, but without revealing the actual contents.
+ * This can be applied to user names, UUIDs, etc.
+ */
+struct RedactedName
+{
+    RedactedName( const char* context, const QString& s );
+    RedactedName( const QString& context, const QString& s );
+
+    operator QString() const;
+
+private:
+    const uint m_id;
+    const QString m_context;
+};
+
+inline QDebug&
+operator<<( QDebug& s, const RedactedName& n )
+{
+    return s << NoQuote << QString( n ) << Quote;
+}
 
 /**
  * @brief Formatted logging of a pointer
@@ -290,6 +336,17 @@ operator<<( QDebug& s, const Pointer& p )
     return s;
 }
 
+/** @brief Convenience object for supplying SubEntry to a debug stream
+ *
+ * In a function with convoluted control paths, it may be unclear
+ * when to supply SubEntry to a debug stream -- it is convenient
+ * for the **first** debug statement from a given function to print
+ * the function header, and all subsequent onces to get SubEntry.
+ *
+ * Create an object of type Once and send it (first) to all CDebug
+ * objects; this will print the function header only once within the
+ * lifetime of that Once object.
+ */
 class Once
 {
 public:
@@ -297,15 +354,35 @@ public:
         : m( true )
     {
     }
-    friend CDebug& operator<<( CDebug&&, Once& );
+    friend CDebug& operator<<( CDebug&&, const Once& );
+
+    /** @brief Restore the object to "fresh" state
+     *
+     * It may be necessary to allow the Once object to stream the
+     * function header again -- for instance, after logging an error,
+     * any following debug log might want to re-introduce the header.
+     */
+    void refresh() { m = true; }
+
+    /** @brief Is this object "fresh"?
+     *
+     * Once a Once-object has printed (once) it is no longer fresh.
+     */
+    operator bool() const { return m; }
 
 private:
-    bool m = false;
+    mutable bool m = false;
 };
 
 inline CDebug&
-operator<<( CDebug&& s, Once& o )
+operator<<( CDebug&& s, const Once& o )
 {
+    if ( !logLevelEnabled( s.level() ) )
+    {
+        // This won't print, so it's not using the "onceness"
+        return s;
+    }
+
     if ( o.m )
     {
         o.m = false;
@@ -318,6 +395,7 @@ operator<<( CDebug&& s, Once& o )
 
 }  // namespace Logger
 
+#define cVerbose() Logger::CDebug( Logger::LOGVERBOSE, Q_FUNC_INFO )
 #define cDebug() Logger::CDebug( Logger::LOGDEBUG, Q_FUNC_INFO )
 #define cWarning() Logger::CDebug( Logger::LOGWARNING, Q_FUNC_INFO )
 #define cError() Logger::CDebug( Logger::LOGERROR, Q_FUNC_INFO )

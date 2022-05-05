@@ -22,12 +22,12 @@
 
 #include <QHBoxLayout>
 
-CheckerContainer::CheckerContainer( const Calamares::RequirementsModel& model, QWidget* parent )
+CheckerContainer::CheckerContainer( Config* config, QWidget* parent )
     : QWidget( parent )
     , m_waitingWidget( new WaitingWidget( QString(), this ) )
     , m_checkerWidget( nullptr )
     , m_verdict( false )
-    , m_model( model )
+    , m_config( config )
 {
     QBoxLayout* mainLayout = new QHBoxLayout;
     setLayout( mainLayout );
@@ -49,13 +49,19 @@ CheckerContainer::requirementsComplete( bool ok )
 {
     if ( !ok )
     {
-        cDebug() << "Requirements not satisfied" << m_model.count() << "entries:";
-        for ( int i = 0; i < m_model.count(); ++i )
+        auto& model = *( m_config->requirementsModel() );
+        cDebug() << "Requirements not satisfied" << model.count() << "entries:";
+        for ( int i = 0; i < model.count(); ++i )
         {
-            auto index = m_model.index( i );
-            cDebug() << Logger::SubEntry << i << m_model.data( index, Calamares::RequirementsModel::Name ).toString()
-                     << "set?" << m_model.data( index, Calamares::RequirementsModel::Satisfied ).toBool() << "req?"
-                     << m_model.data( index, Calamares::RequirementsModel::Mandatory ).toBool();
+            auto index = model.index( i );
+            const bool satisfied = model.data( index, Calamares::RequirementsModel::Satisfied ).toBool();
+            const bool mandatory = model.data( index, Calamares::RequirementsModel::Mandatory ).toBool();
+            if ( !satisfied )
+            {
+                cDebug() << Logger::SubEntry << i << model.data( index, Calamares::RequirementsModel::Name ).toString()
+                         << "not-satisfied"
+                         << "mandatory?" << mandatory;
+            }
         }
     }
 
@@ -63,7 +69,8 @@ CheckerContainer::requirementsComplete( bool ok )
     m_waitingWidget->deleteLater();
     m_waitingWidget = nullptr;  // Don't delete in destructor
 
-    m_checkerWidget = new ResultsListWidget( m_model, this );
+    m_checkerWidget = new ResultsListWidget( m_config, this );
+    m_checkerWidget->setObjectName( "requirementsChecker" );
     layout()->addWidget( m_checkerWidget );
 
     m_verdict = ok;

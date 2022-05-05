@@ -44,7 +44,7 @@ CRYPTTAB_HEADER = """# /etc/crypttab: mappings for encrypted partitions.
 #
 # See crypttab(5) for the supported syntax.
 #
-# NOTE: Do not list your root (/) partition here, it must be set up
+# NOTE: You need not list your root (/) partition here, but it must be set up
 #       beforehand by the initramfs (/etc/mkinitcpio.conf). The same applies
 #       to encrypted swap, which should be set up with mkinitcpio-openswap
 #       for resume support.
@@ -92,7 +92,8 @@ def disk_name_for_partition(partition):
     """
     name = os.path.basename(partition["device"])
 
-    if name.startswith("/dev/mmcblk") or name.startswith("/dev/nvme"):
+    if name.startswith("mmcblk") or name.startswith("nvme"):
+        # Typical mmc device is mmcblk0p1, nvme looks like nvme0n1p2
         return re.sub("p[0-9]+$", "", name)
 
     return re.sub("[0-9]+$", "", name)
@@ -157,11 +158,23 @@ class FstabGenerator(object):
         if not mapper_name or not luks_uuid:
             return None
 
+        password = "/crypto_keyfile.bin"
+        crypttab_options = self.crypttab_options
+
+        # Set crypttab password for partition to none and remove crypttab options
+        # on root partition when /boot is unencrypted
+        if partition["mountPoint"] == "/":
+            if any([p["mountPoint"] == "/boot"
+                   and "luksMapperName" not in p
+                   for p in self.partitions]):
+                password = "none"
+                crypttab_options = ""
+
         return dict(
             name=mapper_name,
             device="UUID=" + luks_uuid,
-            password="/crypto_keyfile.bin",
-            options=self.crypttab_options,
+            password=password,
+            options=crypttab_options,
         )
 
     def print_crypttab_line(self, dct, file=None):
@@ -196,7 +209,7 @@ class FstabGenerator(object):
                         dct = self.generate_fstab_line_info(mount_entry)
                         if dct:
                                 self.print_fstab_line(dct, file=fstab_file)
-                else:
+                elif partition["fs"] != "zfs":  # zfs partitions don't need an entry in fstab
                     dct = self.generate_fstab_line_info(partition)
                     if dct:
                         self.print_fstab_line(dct, file=fstab_file)
@@ -219,7 +232,7 @@ class FstabGenerator(object):
         # Some "fs" names need special handling in /etc/fstab, so remap them.
         filesystem = partition["fs"].lower()
         filesystem = FS_MAP.get(filesystem, filesystem)
-        has_luks = "luksMapperName" in partition
+        luks_mapper_name = partition.get("luksMapperName", None)
         mount_point = partition["mountPoint"]
         disk_name = disk_name_for_partition(partition)
         is_ssd = disk_name in self.ssd_disks
@@ -236,7 +249,11 @@ class FstabGenerator(object):
             libcalamares.utils.debug("Ignoring foreign swap {!s} {!s}".format(disk_name, partition.get("uuid", None)))
             return None
 
-        options = self.get_mount_options(filesystem, mount_point)
+        # If this is btrfs subvol a dedicated to a swapfile, use different options than a normal btrfs subvol
+        if filesystem == "btrfs" and partition.get("subvol", None) == "/@swap":
+            options = self.get_mount_options("btrfs_swap", mount_point)
+        else:
+            options = self.get_mount_options(filesystem, mount_point)
 
         if is_ssd:
             extra = self.ssd_extra_mount_options.get(filesystem)
@@ -244,9 +261,9 @@ class FstabGenerator(object):
             if extra:
                 options += "," + extra
 
-        if mount_point == "/":
+        if mount_point == "/" and filesystem != "btrfs":
             check = 1
-        elif mount_point and mount_point != "swap":
+        elif mount_point and mount_point != "swap" and filesystem != "btrfs":
             check = 2
         else:
             check = 0
@@ -254,15 +271,22 @@ class FstabGenerator(object):
         if mount_point == "/":
             self.root_is_ssd = is_ssd
 
-        if filesystem == "btrfs" and "subvol" in partition:
+        # If there's a set-and-not-empty subvolume set, add it
+        if filesystem == "btrfs" and partition.get("subvol",None):
             options = "subvol={},".format(partition["subvol"]) + options
 
-        if has_luks:
-            device = "/dev/mapper/" + partition["luksMapperName"]
-        elif partition["uuid"] is not None:
+        device = None
+        if luks_mapper_name:
+            device = "/dev/mapper/" + luks_mapper_name
+        elif partition["uuid"]:
             device = "UUID=" + partition["uuid"]
         else:
             device = partition["device"]
+
+        if not device:
+            # TODO: we get here when the user mounted a previously encrypted partition
+            # This should be catched early in the process
+            return None
 
         return dict(device=device,
                     mount_point=mount_point,
@@ -372,15 +396,23 @@ def run():
             root_btrfs = (root_partitions[0] == "btrfs") if root_partitions else False
             if root_btrfs:
                 partitions.append( dict(fs="swap", mountPoint=None, claimed=True, device="/swap/swapfile", uuid=None) )
-            else:    
+            else:
                 partitions.append( dict(fs="swap", mountPoint=None, claimed=True, device="/swapfile", uuid=None) )
         else:
             swap_choice = None
 
     libcalamares.job.setprogress(0.1)
-    mount_options = conf["mountOptions"]
+    mount_options = conf.get("mountOptions", {})
     ssd_extra_mount_options = conf.get("ssdExtraMountOptions", {})
     crypttab_options = conf.get("crypttabOptions", "luks")
+
+    # We rely on mount_options having a default; if there wasn't one,
+    # bail out with a meaningful error.
+    if not mount_options:
+        return (_("Configuration Error"),
+                _("No <pre>{!s}</pre> configuration is given for <pre>{!s}</pre> to use.")
+                .format("mountOptions", "fstab"))
+
     generator = FstabGenerator(partitions,
                                root_mount_point,
                                mount_options,

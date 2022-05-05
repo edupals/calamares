@@ -16,13 +16,12 @@
 #include "core/PartitionCoreModule.h"
 #include "core/PartitionInfo.h"
 
-#include "utils/CalamaresUtilsSystem.h"
-#include "utils/NamedEnum.h"
-#include "utils/Units.h"
-
 #include "GlobalStorage.h"
 #include "JobQueue.h"
+#include "utils/CalamaresUtilsSystem.h"
 #include "utils/Logger.h"
+#include "utils/NamedEnum.h"
+#include "utils/Units.h"
 
 #include <kpmcore/core/device.h>
 #include <kpmcore/core/partition.h>
@@ -72,15 +71,15 @@ swapSuggestion( const qint64 availableSpaceB, Config::SwapChoice swap )
 
 
     // Allow for a fudge factor
-    suggestedSwapSizeB *= overestimationFactor;
+    suggestedSwapSizeB = qRound64( suggestedSwapSizeB * overestimationFactor );
 
     // don't use more than 10% of available space
     if ( !ensureSuspendToDisk )
     {
-        suggestedSwapSizeB = qMin( suggestedSwapSizeB, qint64( 0.10 * availableSpaceB ) );
+        suggestedSwapSizeB = qMin( suggestedSwapSizeB, availableSpaceB / 10 /* 10% is 0.1 */ );
     }
 
-    cDebug() << "Suggested swap size:" << suggestedSwapSizeB / 1024. / 1024. / 1024. << "GiB";
+    cDebug() << "Suggested swap size:" << CalamaresUtils::BytesToGiB( suggestedSwapSizeB ) << "GiB";
 
     return suggestedSwapSizeB;
 }
@@ -109,18 +108,17 @@ doAutopartition( PartitionCoreModule* core, Device* dev, Choices::AutoPartitionO
         partType = isEfi ? PartitionTable::gpt : PartitionTable::msdos;
     }
 
+    // Looking up the defaultFsType (which should name a filesystem type)
+    // will log an error and set the type to Unknown if there's something wrong.
+    FileSystem::Type type = FileSystem::Unknown;
+    PartUtils::canonicalFilesystemName( o.defaultFsType, &type );
+    core->partitionLayout().setDefaultFsType( type == FileSystem::Unknown ? FileSystem::Ext4 : type );
+
     core->createPartitionTable( dev, partType );
 
     if ( isEfi )
     {
-        int uefisys_part_sizeB = 300_MiB;
-        if ( gs->contains( "efiSystemPartitionSize" ) )
-        {
-            CalamaresUtils::Partition::PartitionSize part_size
-                = CalamaresUtils::Partition::PartitionSize( gs->value( "efiSystemPartitionSize" ).toString() );
-            uefisys_part_sizeB = part_size.toBytes( dev->capacity() );
-        }
-
+        size_t uefisys_part_sizeB = PartUtils::efiFilesystemMinimumSize();
         qint64 efiSectorCount = CalamaresUtils::bytesToSectors( uefisys_part_sizeB, dev->logicalSize() );
         Q_ASSERT( efiSectorCount > 0 );
 
@@ -132,6 +130,7 @@ doAutopartition( PartitionCoreModule* core, Device* dev, Choices::AutoPartitionO
                                                                   *dev,
                                                                   PartitionRole( PartitionRole::Primary ),
                                                                   FileSystem::Fat32,
+                                                                  QString(),
                                                                   firstFreeSector,
                                                                   lastSector,
                                                                   KPM_PARTITION_FLAG( None ) );
@@ -180,6 +179,7 @@ doAutopartition( PartitionCoreModule* core, Device* dev, Choices::AutoPartitionO
                                                             *dev,
                                                             PartitionRole( PartitionRole::Primary ),
                                                             FileSystem::LinuxSwap,
+                                                            QStringLiteral( "swap" ),
                                                             lastSectorForRoot + 1,
                                                             dev->totalLogical() - 1,
                                                             KPM_PARTITION_FLAG( None ) );
@@ -190,6 +190,7 @@ doAutopartition( PartitionCoreModule* core, Device* dev, Choices::AutoPartitionO
                                                                      *dev,
                                                                      PartitionRole( PartitionRole::Primary ),
                                                                      FileSystem::LinuxSwap,
+                                                                     QStringLiteral( "swap" ),
                                                                      lastSectorForRoot + 1,
                                                                      dev->totalLogical() - 1,
                                                                      o.luksPassphrase,

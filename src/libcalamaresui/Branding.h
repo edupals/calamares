@@ -198,6 +198,13 @@ public:
      */
     QPixmap image( const QString& name, const QSize& size ) const;
 
+    /** @brief Look up image with alternate names
+     *
+     * Calls image() for each name in the @p list and returns the first
+     * one that is non-null. May return a null pixmap if nothing is found.
+     */
+    QPixmap image( const QStringList& list, const QSize& size ) const;
+
     /** @brief Stylesheet to apply for this branding. May be empty.
      *
      * The file is loaded every time this function is called, so
@@ -223,10 +230,18 @@ public:
 
     /** @brief Upload server configuration
      *
-     * This is both the type (which may be none, in which case the URL
-     * is irrelevant and usually empty) and the URL for the upload.
+     * This object has 3 items : the type (which may be none, in which case the URL
+     * is irrelevant and usually empty), the URL for the upload and the size limit of upload
+     * in bytes (for configuration value < 0, it serves -1, which stands for having no limit).
      */
-    using UploadServerInfo = QPair< UploadServerType, QUrl >;
+    struct UploadServerInfo
+    {
+        UploadServerType type;
+        QUrl url;
+        qint64 size;
+
+        operator bool() const { return type != Calamares::Branding::UploadServerType::None && size != 0; }
+    };
     UploadServerInfo uploadServer() const { return m_uploadServer; }
 
     /**

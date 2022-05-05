@@ -14,8 +14,11 @@
 
 #include "DllMacro.h"
 
+#include <QList>
 #include <QString>
 #include <QStringList>
+
+#include <memory>
 
 namespace CalamaresUtils
 {
@@ -48,6 +51,13 @@ DLLEXPORT int mount( const QString& devicePath,
  */
 DLLEXPORT int unmount( const QString& path, const QStringList& options = QStringList() );
 
+
+/** @brief Mount and automatically unmount a device
+ *
+ * The TemporaryMount object mounts a filesystem, and is like calling
+ * the mount() function, above. When the object is destroyed, unmount()
+ * is called with suitable options to undo the original mount.
+ */
 class DLLEXPORT TemporaryMount
 {
 public:
@@ -58,12 +68,42 @@ public:
     TemporaryMount& operator=( const TemporaryMount& ) = delete;
     ~TemporaryMount();
 
-    bool isValid() const { return m_d; }
+    bool isValid() const { return bool( m_d ); }
     QString path() const;
 
 private:
     struct Private;
-    Private* m_d = nullptr;
+    std::unique_ptr< Private > m_d;
+};
+
+
+/** @brief Information about a mount point from /etc/mtab
+ *
+ * Entries in /etc/mtab are of the form: <device> <mountpoint> <other>
+ * This struct only stores device and mountpoint.
+ *
+ * The main way of getting these structs is to call fromMtab() to read
+ * an /etc/mtab-like file and storing all of the entries from it.
+ */
+struct DLLEXPORT MtabInfo
+{
+    QString device;
+    QString mountPoint;
+
+    /** @brief Reads an mtab-like file and returns the entries from it
+     *
+     * When @p mtabPath is given, that file is read. If the given name is
+     * empty (e.g. the default) then /etc/mtab is read, instead.
+     *
+     * If @p mountPrefix is given, then only entries that have a mount point
+     * that starts with that prefix are returned.
+     */
+    static QList< MtabInfo > fromMtabFilteredByPrefix( const QString& mountPrefix = QString(),
+                                                       const QString& mtabPath = QString() );
+    /// @brief Predicate to sort MtabInfo objects by device-name
+    static bool deviceOrder( const MtabInfo& a, const MtabInfo& b ) { return a.device > b.device; }
+    /// @brief Predicate to sort MtabInfo objects by mount-point
+    static bool mountPointOrder( const MtabInfo& a, const MtabInfo& b ) { return a.mountPoint > b.mountPoint; }
 };
 
 }  // namespace Partition

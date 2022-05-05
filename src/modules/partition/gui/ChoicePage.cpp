@@ -11,15 +11,9 @@
 
 #include "ChoicePage.h"
 
-#include "BootInfoWidget.h"
-#include "DeviceInfoWidget.h"
-#include "PartitionBarsView.h"
-#include "PartitionLabelsView.h"
-#include "PartitionSplitterWidget.h"
-#include "ReplaceWidget.h"
-#include "ScanningDialog.h"
+#include "Config.h"
+
 #include "core/BootLoaderModel.h"
-#include "core/Config.h"
 #include "core/DeviceModel.h"
 #include "core/KPMHelpers.h"
 #include "core/OsproberEntry.h"
@@ -28,6 +22,13 @@
 #include "core/PartitionCoreModule.h"
 #include "core/PartitionInfo.h"
 #include "core/PartitionModel.h"
+#include "gui/BootInfoWidget.h"
+#include "gui/DeviceInfoWidget.h"
+#include "gui/PartitionBarsView.h"
+#include "gui/PartitionLabelsView.h"
+#include "gui/PartitionSplitterWidget.h"
+#include "gui/ReplaceWidget.h"
+#include "gui/ScanningDialog.h"
 
 #include "Branding.h"
 #include "GlobalStorage.h"
@@ -41,7 +42,6 @@
 #include "widgets/PrettyRadioButton.h"
 
 #include <kpmcore/core/device.h>
-#include <kpmcore/core/partition.h>
 #ifdef WITH_KPMCORE4API
 #include <kpmcore/core/softwareraid.h>
 #endif
@@ -89,7 +89,6 @@ ChoicePage::ChoicePage( Config* config, QWidget* parent )
 
     auto gs = Calamares::JobQueue::instance()->globalStorage();
 
-    m_requiredPartitionTableType = gs->value( "requiredPartitionTableType" ).toStringList();
     m_enableEncryptionWidget = gs->value( "enableLuksAutomatedPartitioning" ).toBool();
 
     // Set up drives combo
@@ -117,9 +116,7 @@ ChoicePage::ChoicePage( Config* config, QWidget* parent )
     CalamaresUtils::unmarginLayout( m_itemsLayout );
 
     // Drive selector + preview
-    CALAMARES_RETRANSLATE( retranslateUi( this ); m_drivesLabel->setText( tr( "Select storage de&vice:" ) );
-                           m_previewBeforeLabel->setText( tr( "Current:" ) );
-                           m_previewAfterLabel->setText( tr( "After:" ) ); );
+    CALAMARES_RETRANSLATE_SLOT( &ChoicePage::retranslate );
 
     m_previewBeforeFrame->setSizePolicy( QSizePolicy::Preferred, QSizePolicy::Expanding );
     m_previewAfterFrame->setSizePolicy( QSizePolicy::Preferred, QSizePolicy::Expanding );
@@ -133,6 +130,41 @@ ChoicePage::ChoicePage( Config* config, QWidget* parent )
 
 ChoicePage::~ChoicePage() {}
 
+void
+ChoicePage::retranslate()
+{
+    retranslateUi( this );
+    m_drivesLabel->setText( tr( "Select storage de&vice:" ) );
+    m_previewBeforeLabel->setText( tr( "Current:" ) );
+    m_previewAfterLabel->setText( tr( "After:" ) );
+
+    updateSwapChoicesTr();
+    updateChoiceButtonsTr();
+}
+
+
+/** @brief Sets the @p model for the given @p box and adjusts UI sizes to match.
+ *
+ * The model provides data for drawing the items in the model; the
+ * drawing itself is done by the delegate, which may end up drawing a
+ * different width in the popup than in the collapsed combo box.
+ *
+ * Make the box wide enough to accomodate the whole expanded delegate;
+ * this avoids cases where the popup would truncate data being drawn
+ * because the overall box is sized too narrow.
+ */
+void
+setModelToComboBox( QComboBox* box, QAbstractItemModel* model )
+{
+    box->setModel( model );
+    if ( model->rowCount() > 0 )
+    {
+        QStyleOptionViewItem options;
+        options.initFrom( box );
+        auto delegateSize = box->itemDelegate()->sizeHint( options, model->index( 0, 0 ) );
+        box->setMinimumWidth( delegateSize.width() );
+    }
+}
 
 void
 ChoicePage::init( PartitionCoreModule* core )
@@ -144,16 +176,17 @@ ChoicePage::init( PartitionCoreModule* core )
 
 
     // We need to do this because a PCM revert invalidates the deviceModel.
-    connect( core, &PartitionCoreModule::reverted, this, [=] {
-        m_drivesCombo->setModel( core->deviceModel() );
-        m_drivesCombo->setCurrentIndex( m_lastSelectedDeviceIndex );
-    } );
-    m_drivesCombo->setModel( core->deviceModel() );
-
-    connect( m_drivesCombo,
-             static_cast< void ( QComboBox::* )( int ) >( &QComboBox::currentIndexChanged ),
+    connect( core,
+             &PartitionCoreModule::reverted,
              this,
-             &ChoicePage::applyDeviceChoice );
+             [ = ]
+             {
+                 setModelToComboBox( m_drivesCombo, core->deviceModel() );
+                 m_drivesCombo->setCurrentIndex( m_lastSelectedDeviceIndex );
+             } );
+    setModelToComboBox( m_drivesCombo, core->deviceModel() );
+
+    connect( m_drivesCombo, qOverload< int >( &QComboBox::currentIndexChanged ), this, &ChoicePage::applyDeviceChoice );
 
     connect( m_encryptWidget, &EncryptWidget::stateChanged, this, &ChoicePage::onEncryptWidgetStateChanged );
     connect( m_reuseHomeCheckBox, &QCheckBox::stateChanged, this, &ChoicePage::onHomeCheckBoxStateChanged );
@@ -246,6 +279,16 @@ ChoicePage::setupChoices()
         m_eraseButton->addOptionsComboBox( m_eraseSwapChoiceComboBox );
     }
 
+    if ( m_config->eraseFsTypes().count() > 1 )
+    {
+        m_eraseFsTypesChoiceComboBox = new QComboBox;
+        m_eraseFsTypesChoiceComboBox->addItems( m_config->eraseFsTypes() );
+        connect(
+            m_eraseFsTypesChoiceComboBox, &QComboBox::currentTextChanged, m_config, &Config::setEraseFsTypeChoice );
+        connect( m_config, &Config::eraseModeFilesystemChanged, this, &ChoicePage::onActionChanged );
+        m_eraseButton->addOptionsComboBox( m_eraseFsTypesChoiceComboBox );
+    }
+
     m_itemsLayout->addWidget( m_alongsideButton );
     m_itemsLayout->addWidget( m_replaceButton );
     m_itemsLayout->addWidget( m_eraseButton );
@@ -264,26 +307,30 @@ ChoicePage::setupChoices()
 #else
     auto buttonSignal = &QButtonGroup::idToggled;
 #endif
-    connect( m_grp, buttonSignal, this, [this]( int id, bool checked ) {
-        if ( checked )  // An action was picked.
-        {
-            m_config->setInstallChoice( id );
-            updateNextEnabled();
+    connect( m_grp,
+             buttonSignal,
+             this,
+             [ this ]( int id, bool checked )
+             {
+                 if ( checked )  // An action was picked.
+                 {
+                     m_config->setInstallChoice( id );
+                     updateNextEnabled();
 
-            emit actionChosen();
-        }
-        else  // An action was unpicked, either on its own or because of another selection.
-        {
-            if ( m_grp->checkedButton() == nullptr )  // If no other action is chosen, we must
-            {
-                // set m_choice to NoChoice and reset previews.
-                m_config->setInstallChoice( InstallChoice::NoChoice );
-                updateNextEnabled();
+                     Q_EMIT actionChosen();
+                 }
+                 else  // An action was unpicked, either on its own or because of another selection.
+                 {
+                     if ( m_grp->checkedButton() == nullptr )  // If no other action is chosen, we must
+                     {
+                         // set m_choice to NoChoice and reset previews.
+                         m_config->setInstallChoice( InstallChoice::NoChoice );
+                         updateNextEnabled();
 
-                emit actionChosen();
-            }
-        }
-    } );
+                         Q_EMIT actionChosen();
+                     }
+                 }
+             } );
 
     m_rightLayout->setStretchFactor( m_itemsLayout, 1 );
     m_rightLayout->setStretchFactor( m_previewBeforeFrame, 0 );
@@ -291,14 +338,15 @@ ChoicePage::setupChoices()
 
     connect( this, &ChoicePage::actionChosen, this, &ChoicePage::onActionChanged );
     if ( m_eraseSwapChoiceComboBox )
+    {
         connect( m_eraseSwapChoiceComboBox,
                  QOverload< int >::of( &QComboBox::currentIndexChanged ),
                  this,
                  &ChoicePage::onEraseSwapChoiceChanged );
+    }
 
-    CALAMARES_RETRANSLATE( m_somethingElseButton->setText( tr( "<strong>Manual partitioning</strong><br/>"
-                                                               "You can create or resize partitions yourself." ) );
-                           updateSwapChoicesTr( m_eraseSwapChoiceComboBox ); );
+    updateSwapChoicesTr();
+    updateChoiceButtonsTr();
 }
 
 
@@ -361,11 +409,13 @@ ChoicePage::applyDeviceChoice()
     if ( m_core->isDirty() )
     {
         ScanningDialog::run(
-            QtConcurrent::run( [=] {
-                QMutexLocker locker( &m_coreMutex );
-                m_core->revertAllDevices();
-            } ),
-            [this] { continueApplyDeviceChoice(); },
+            QtConcurrent::run(
+                [ = ]
+                {
+                    QMutexLocker locker( &m_coreMutex );
+                    m_core->revertAllDevices();
+                } ),
+            [ this ] { continueApplyDeviceChoice(); },
             this );
     }
     else
@@ -403,8 +453,8 @@ ChoicePage::continueApplyDeviceChoice()
         checkInstallChoiceRadioButton( m_config->installChoice() );
     }
 
-    emit actionChosen();
-    emit deviceChosen();
+    Q_EMIT actionChosen();
+    Q_EMIT deviceChosen();
 }
 
 
@@ -442,9 +492,8 @@ ChoicePage::applyActionChoice( InstallChoice choice )
     case InstallChoice::Erase:
     {
         auto gs = Calamares::JobQueue::instance()->globalStorage();
-
         PartitionActions::Choices::AutoPartitionOptions options { gs->value( "defaultPartitionTableType" ).toString(),
-                                                                  gs->value( "defaultFileSystemType" ).toString(),
+                                                                  m_config->eraseFsType(),
                                                                   m_encryptWidget->passphrase(),
                                                                   gs->value( "efiSystemPartition" ).toString(),
                                                                   CalamaresUtils::GiBtoBytes(
@@ -454,20 +503,23 @@ ChoicePage::applyActionChoice( InstallChoice choice )
         if ( m_core->isDirty() )
         {
             ScanningDialog::run(
-                QtConcurrent::run( [=] {
-                    QMutexLocker locker( &m_coreMutex );
-                    m_core->revertDevice( selectedDevice() );
-                } ),
-                [=] {
+                QtConcurrent::run(
+                    [ = ]
+                    {
+                        QMutexLocker locker( &m_coreMutex );
+                        m_core->revertDevice( selectedDevice() );
+                    } ),
+                [ = ]
+                {
                     PartitionActions::doAutopartition( m_core, selectedDevice(), options );
-                    emit deviceChosen();
+                    Q_EMIT deviceChosen();
                 },
                 this );
         }
         else
         {
             PartitionActions::doAutopartition( m_core, selectedDevice(), options );
-            emit deviceChosen();
+            Q_EMIT deviceChosen();
         }
     }
     break;
@@ -475,15 +527,15 @@ ChoicePage::applyActionChoice( InstallChoice choice )
         if ( m_core->isDirty() )
         {
             ScanningDialog::run(
-                QtConcurrent::run( [=] {
-                    QMutexLocker locker( &m_coreMutex );
-                    m_core->revertDevice( selectedDevice() );
-                } ),
+                QtConcurrent::run(
+                    [ = ]
+                    {
+                        QMutexLocker locker( &m_coreMutex );
+                        m_core->revertDevice( selectedDevice() );
+                    } ),
                 [] {},
                 this );
         }
-        updateNextEnabled();
-
         connect( m_beforePartitionBarsView->selectionModel(),
                  SIGNAL( currentRowChanged( QModelIndex, QModelIndex ) ),
                  this,
@@ -495,11 +547,14 @@ ChoicePage::applyActionChoice( InstallChoice choice )
         if ( m_core->isDirty() )
         {
             ScanningDialog::run(
-                QtConcurrent::run( [=] {
-                    QMutexLocker locker( &m_coreMutex );
-                    m_core->revertDevice( selectedDevice() );
-                } ),
-                [this] {
+                QtConcurrent::run(
+                    [ = ]
+                    {
+                        QMutexLocker locker( &m_coreMutex );
+                        m_core->revertDevice( selectedDevice() );
+                    } ),
+                [ this ]
+                {
                     // We need to reupdate after reverting because the splitter widget is
                     // not a true view.
                     updateActionChoicePreview( m_config->installChoice() );
@@ -507,7 +562,6 @@ ChoicePage::applyActionChoice( InstallChoice choice )
                 },
                 this );
         }
-        updateNextEnabled();
 
         connect( m_beforePartitionBarsView->selectionModel(),
                  SIGNAL( currentRowChanged( QModelIndex, QModelIndex ) ),
@@ -519,6 +573,7 @@ ChoicePage::applyActionChoice( InstallChoice choice )
     case InstallChoice::Manual:
         break;
     }
+    updateNextEnabled();
     updateActionChoicePreview( choice );
 }
 
@@ -735,7 +790,8 @@ ChoicePage::doReplaceSelectedPartition( const QModelIndex& current )
 
     ScanningDialog::run(
         QtConcurrent::run(
-            [this, current, homePartitionPath]( bool doReuseHomePartition ) {
+            [ this, current, homePartitionPath ]( bool doReuseHomePartition )
+            {
                 QMutexLocker locker( &m_coreMutex );
 
                 if ( m_core->isDirty() )
@@ -816,7 +872,8 @@ ChoicePage::doReplaceSelectedPartition( const QModelIndex& current )
                 }
             },
             m_reuseHomeCheckBox->isChecked() ),
-        [this, homePartitionPath] {
+        [ this, homePartitionPath ]
+        {
             m_reuseHomeCheckBox->setVisible( !homePartitionPath->isEmpty() );
             if ( !homePartitionPath->isEmpty() )
                 m_reuseHomeCheckBox->setText( tr( "Reuse %1 as home partition for %2." )
@@ -969,7 +1026,8 @@ ChoicePage::updateActionChoicePreview( InstallChoice choice )
         connect( m_afterPartitionSplitterWidget,
                  &PartitionSplitterWidget::partitionResized,
                  this,
-                 [this, sizeLabel]( const QString& path, qint64 size, qint64 sizeNext ) {
+                 [ this, sizeLabel ]( const QString& path, qint64 size, qint64 sizeNext )
+                 {
                      Q_UNUSED( path )
                      sizeLabel->setText(
                          tr( "%1 will be shrunk to %2MiB and a new "
@@ -983,9 +1041,11 @@ ChoicePage::updateActionChoicePreview( InstallChoice choice )
         m_previewAfterFrame->show();
         m_previewAfterLabel->show();
 
-        SelectionFilter filter = []( const QModelIndex& index ) {
+        SelectionFilter filter = []( const QModelIndex& index )
+        {
             return PartUtils::canBeResized(
-                static_cast< Partition* >( index.data( PartitionModel::PartitionPtrRole ).value< void* >() ) );
+                static_cast< Partition* >( index.data( PartitionModel::PartitionPtrRole ).value< void* >() ),
+                Logger::Once() );
         };
         m_beforePartitionBarsView->setSelectionFilter( filter );
         m_beforePartitionLabelsView->setSelectionFilter( filter );
@@ -1031,17 +1091,22 @@ ChoicePage::updateActionChoicePreview( InstallChoice choice )
             eraseBootloaderLabel->setText( tr( "Boot loader location:" ) );
 
             m_bootloaderComboBox = createBootloaderComboBox( eraseWidget );
-            connect( m_core->bootLoaderModel(), &QAbstractItemModel::modelReset, [this]() {
-                if ( !m_bootloaderComboBox.isNull() )
-                {
-                    Calamares::restoreSelectedBootLoader( *m_bootloaderComboBox, m_core->bootLoaderInstallPath() );
-                }
-            } );
+            connect( m_core->bootLoaderModel(),
+                     &QAbstractItemModel::modelReset,
+                     [ this ]()
+                     {
+                         if ( !m_bootloaderComboBox.isNull() )
+                         {
+                             Calamares::restoreSelectedBootLoader( *m_bootloaderComboBox,
+                                                                   m_core->bootLoaderInstallPath() );
+                         }
+                     } );
             connect(
                 m_core,
                 &PartitionCoreModule::deviceReverted,
                 this,
-                [this]( Device* dev ) {
+                [ this ]( Device* dev )
+                {
                     Q_UNUSED( dev )
                     if ( !m_bootloaderComboBox.isNull() )
                     {
@@ -1072,9 +1137,11 @@ ChoicePage::updateActionChoicePreview( InstallChoice choice )
         }
         else
         {
-            SelectionFilter filter = []( const QModelIndex& index ) {
+            SelectionFilter filter = []( const QModelIndex& index )
+            {
                 return PartUtils::canBeReplaced(
-                    static_cast< Partition* >( index.data( PartitionModel::PartitionPtrRole ).value< void* >() ) );
+                    static_cast< Partition* >( index.data( PartitionModel::PartitionPtrRole ).value< void* >() ),
+                    Logger::Once() );
             };
             m_beforePartitionBarsView->setSelectionFilter( filter );
             m_beforePartitionLabelsView->setSelectionFilter( filter );
@@ -1111,7 +1178,7 @@ ChoicePage::updateActionChoicePreview( InstallChoice choice )
     }
 
     // Also handle selection behavior on beforeFrame.
-    QAbstractItemView::SelectionMode previewSelectionMode;
+    QAbstractItemView::SelectionMode previewSelectionMode = QAbstractItemView::NoSelection;
     switch ( m_config->installChoice() )
     {
     case InstallChoice::Replace:
@@ -1178,18 +1245,22 @@ ChoicePage::createBootloaderComboBox( QWidget* parent )
     comboForBootloader->setModel( m_core->bootLoaderModel() );
 
     // When the chosen bootloader device changes, we update the choice in the PCM
-    connect( comboForBootloader, QOverload< int >::of( &QComboBox::currentIndexChanged ), this, [this]( int newIndex ) {
-        QComboBox* bootloaderCombo = qobject_cast< QComboBox* >( sender() );
-        if ( bootloaderCombo )
-        {
-            QVariant var = bootloaderCombo->itemData( newIndex, BootLoaderModel::BootLoaderPathRole );
-            if ( !var.isValid() )
-            {
-                return;
-            }
-            m_core->setBootLoaderInstallPath( var.toString() );
-        }
-    } );
+    connect( comboForBootloader,
+             QOverload< int >::of( &QComboBox::currentIndexChanged ),
+             this,
+             [ this ]( int newIndex )
+             {
+                 QComboBox* bootloaderCombo = qobject_cast< QComboBox* >( sender() );
+                 if ( bootloaderCombo )
+                 {
+                     QVariant var = bootloaderCombo->itemData( newIndex, BootLoaderModel::BootLoaderPathRole );
+                     if ( !var.isValid() )
+                     {
+                         return;
+                     }
+                     m_core->setBootLoaderInstallPath( var.toString() );
+                 }
+             } );
 
     return comboForBootloader;
 }
@@ -1211,6 +1282,28 @@ operator<<( QDebug& s, PartitionIterator& it )
     return s;
 }
 
+QString
+describePartitionTypes( const QStringList& types )
+{
+    if ( types.empty() )
+    {
+        return QCoreApplication::translate(
+            ChoicePage::staticMetaObject.className(), "any", "any partition-table type" );
+    }
+    if ( types.size() == 1 )
+    {
+        return types.first();
+    }
+    if ( types.size() == 2 )
+    {
+        return QCoreApplication::translate(
+                   ChoicePage::staticMetaObject.className(), "%1 or %2", "partition-table types" )
+            .arg( types.at( 0 ), types.at( 1 ) );
+    }
+    // More than two, rather unlikely
+    return types.join( ", " );
+}
+
 /**
  * @brief ChoicePage::setupActions happens every time a new Device* is selected in the
  *      device picker. Sets up the text and visibility of the partitioning actions based
@@ -1219,10 +1312,12 @@ operator<<( QDebug& s, PartitionIterator& it )
 void
 ChoicePage::setupActions()
 {
+    Logger::Once o;
+
     Device* currentDevice = selectedDevice();
     OsproberEntryList osproberEntriesForCurrentDevice = getOsproberEntriesForDevice( currentDevice );
 
-    cDebug() << "Setting up actions for" << currentDevice->deviceNode() << "with"
+    cDebug() << o << "Setting up actions for" << currentDevice->deviceNode() << "with"
              << osproberEntriesForCurrentDevice.count() << "entries.";
 
     if ( currentDevice->partitionTable() )
@@ -1262,18 +1357,17 @@ ChoicePage::setupActions()
     if ( currentDevice->partitionTable() )
     {
         tableType = currentDevice->partitionTable()->type();
-        matchTableType = m_requiredPartitionTableType.size() == 0
-            || m_requiredPartitionTableType.contains( PartitionTable::tableTypeToName( tableType ) );
+        matchTableType = m_config->acceptPartitionTableType( tableType );
     }
 
     for ( auto it = PartitionIterator::begin( currentDevice ); it != PartitionIterator::end( currentDevice ); ++it )
     {
-        if ( PartUtils::canBeResized( *it ) )
+        if ( PartUtils::canBeResized( *it, o ) )
         {
             cDebug() << Logger::SubEntry << "contains resizable" << it;
             atLeastOneCanBeResized = true;
         }
-        if ( PartUtils::canBeReplaced( *it ) )
+        if ( PartUtils::canBeReplaced( *it, o ) )
         {
             cDebug() << Logger::SubEntry << "contains replaceable" << it;
             atLeastOneCanBeReplaced = true;
@@ -1387,7 +1481,7 @@ ChoicePage::setupActions()
     }
 
 #ifdef DEBUG_PARTITION_UNSAFE
-#ifdef DEBUG_PARTITION_LAME
+#ifdef DEBUG_PARTITION_BAIL_OUT
     // If things can't be broken, allow all the buttons
     atLeastOneCanBeReplaced = true;
     atLeastOneCanBeResized = true;
@@ -1402,7 +1496,7 @@ ChoicePage::setupActions()
     }
     else
     {
-        cDebug() << "Replace button suppressed because none can be replaced.";
+        cDebug() << "No partitions available for replace-action.";
         force_uncheck( m_grp, m_replaceButton );
     }
 
@@ -1412,7 +1506,7 @@ ChoicePage::setupActions()
     }
     else
     {
-        cDebug() << "Alongside button suppressed because none can be resized.";
+        cDebug() << "No partitions available for resize-action.";
         force_uncheck( m_grp, m_alongsideButton );
     }
 
@@ -1422,8 +1516,8 @@ ChoicePage::setupActions()
     }
     else
     {
-        cDebug() << "Erase button suppressed"
-                 << "mount?" << atLeastOneIsMounted << "raid?" << isInactiveRAID;
+        cDebug() << "No partitions ("
+                 << "any-mounted?" << atLeastOneIsMounted << "is-raid?" << isInactiveRAID << ") for erase-action.";
         force_uncheck( m_grp, m_eraseButton );
     }
 
@@ -1444,11 +1538,11 @@ ChoicePage::setupActions()
                                      "but the partition table <strong>%1</strong> is different from the "
                                      "needed <strong>%2</strong>.<br/>" )
                                      .arg( PartitionTable::tableTypeToName( tableType ) )
-                                     .arg( m_requiredPartitionTableType.join( " or " ) ) );
+                                     .arg( describePartitionTypes( m_config->partitionTableTypes() ) ) );
         m_messageLabel->show();
 
         cWarning() << "Partition table" << PartitionTable::tableTypeToName( tableType )
-                   << "does not match the requirement " << m_requiredPartitionTableType.join( " or " )
+                   << "does not match the requirement " << m_config->partitionTableTypes().join( ',' )
                    << ", ENABLING erase feature and DISABLING alongside, replace and manual features.";
         m_eraseButton->show();
         m_alongsideButton->hide();
@@ -1570,53 +1664,64 @@ ChoicePage::updateNextEnabled()
     if ( enabled != m_nextEnabled )
     {
         m_nextEnabled = enabled;
-        emit nextStatusChanged( enabled );
+        Q_EMIT nextStatusChanged( enabled );
     }
 }
 
 void
-ChoicePage::updateSwapChoicesTr( QComboBox* box )
+ChoicePage::updateSwapChoicesTr()
 {
-    if ( !box )
+    if ( !m_eraseSwapChoiceComboBox )
     {
         return;
     }
 
     static_assert( SwapChoice::NoSwap == 0, "Enum values out-of-sync" );
-    for ( int index = 0; index < box->count(); ++index )
+    for ( int index = 0; index < m_eraseSwapChoiceComboBox->count(); ++index )
     {
         bool ok = false;
         int value = 0;
 
-        switch ( value = box->itemData( index ).toInt( &ok ) )
+        switch ( value = m_eraseSwapChoiceComboBox->itemData( index ).toInt( &ok ) )
         {
         // case 0:
         case SwapChoice::NoSwap:
             // toInt() returns 0 on failure, so check for ok
             if ( ok )  // It was explicitly set to 0
             {
-                box->setItemText( index, tr( "No Swap" ) );
+                m_eraseSwapChoiceComboBox->setItemText( index, tr( "No Swap" ) );
             }
             else
             {
-                cWarning() << "Box item" << index << box->itemText( index ) << "has non-integer role.";
+                cWarning() << "Box item" << index << m_eraseSwapChoiceComboBox->itemText( index )
+                           << "has non-integer role.";
             }
             break;
         case SwapChoice::ReuseSwap:
-            box->setItemText( index, tr( "Reuse Swap" ) );
+            m_eraseSwapChoiceComboBox->setItemText( index, tr( "Reuse Swap" ) );
             break;
         case SwapChoice::SmallSwap:
-            box->setItemText( index, tr( "Swap (no Hibernate)" ) );
+            m_eraseSwapChoiceComboBox->setItemText( index, tr( "Swap (no Hibernate)" ) );
             break;
         case SwapChoice::FullSwap:
-            box->setItemText( index, tr( "Swap (with Hibernate)" ) );
+            m_eraseSwapChoiceComboBox->setItemText( index, tr( "Swap (with Hibernate)" ) );
             break;
         case SwapChoice::SwapFile:
-            box->setItemText( index, tr( "Swap to file" ) );
+            m_eraseSwapChoiceComboBox->setItemText( index, tr( "Swap to file" ) );
             break;
         default:
-            cWarning() << "Box item" << index << box->itemText( index ) << "has role" << value;
+            cWarning() << "Box item" << index << m_eraseSwapChoiceComboBox->itemText( index ) << "has role" << value;
         }
+    }
+}
+
+void
+ChoicePage::updateChoiceButtonsTr()
+{
+    if ( m_somethingElseButton )
+    {
+        m_somethingElseButton->setText( tr( "<strong>Manual partitioning</strong><br/>"
+                                            "You can create or resize partitions yourself." ) );
     }
 }
 

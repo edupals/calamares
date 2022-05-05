@@ -35,6 +35,10 @@ total_packages = 0  # For the entire job
 completed_packages = 0  # Done so far for this job
 group_packages = 0  # One group of packages from an -install or -remove entry
 
+# A PM object may set this to a string (take care of translations!)
+# to override the string produced by pretty_status_message()
+custom_status_message = None
+
 INSTALL = object()
 REMOVE = object()
 mode_packages = None  # Changes to INSTALL or REMOVE
@@ -51,6 +55,8 @@ def pretty_name():
 
 
 def pretty_status_message():
+    if custom_status_message is not None:
+        return custom_status_message
     if not group_packages:
         if (total_packages > 0):
             # Outside the context of an operation
@@ -151,6 +157,82 @@ class PackageManager(metaclass=abc.ABCMeta):
             self.remove([packagedata["package"]])
             self.run(packagedata["post-script"])
 
+    def operation_install(self, package_list, from_local=False):
+        """
+        Installs the list of packages named in @p package_list .
+        These can be strings -- plain package names -- or
+        structures (with a pre- and post-install step).
+
+        This operation is called for "critical" packages,
+        which are expected to succeed, or fail, all together.
+        However, if there are packages with pre- or post-scripts,
+        then packages are installed one-by-one instead.
+
+        NOTE: package managers may reimplement this method
+        NOTE: exceptions are expected to leave this method, to indicate
+              failure of the installation.
+        """
+        if all([isinstance(x, str) for x in package_list]):
+            self.install(package_list, from_local=from_local)
+        else:
+            for package in package_list:
+                self.install_package(package, from_local=from_local)
+
+    def operation_try_install(self, package_list):
+        """
+        Installs the list of packages named in @p package_list .
+        These can be strings -- plain package names -- or
+        structures (with a pre- and post-install step).
+
+        This operation is called for "non-critical" packages,
+        which can succeed or fail without affecting the overall installation.
+        Packages are installed one-by-one to support package managers
+        that do not have a "install as much as you can" mode.
+
+        NOTE: package managers may reimplement this method
+        NOTE: no package-installation exceptions should be raised
+        """
+        # we make a separate package manager call for each package so a
+        # single failing package won't stop all of them
+        for package in package_list:
+            try:
+                self.install_package(package)
+            except subprocess.CalledProcessError:
+                libcalamares.utils.warning("Could not install package %s" % package)
+
+    def operation_remove(self, package_list):
+        """
+        Removes the list of packages named in @p package_list .
+        These can be strings -- plain package names -- or
+        structures (with a pre- and post-install step).
+
+        This operation is called for "critical" packages, which are
+        expected to succeed or fail all together.
+        However, if there are packages with pre- or post-scripts,
+        then packages are removed one-by-one instead.
+
+        NOTE: package managers may reimplement this method
+        NOTE: exceptions should be raised to indicate failure
+        """
+        if all([isinstance(x, str) for x in package_list]):
+            self.remove(package_list)
+        else:
+            for package in package_list:
+                self.remove_package(package)
+
+    def operation_try_remove(self, package_list):
+        """
+        Same relation as try_install has to install, except it removes
+        packages instead. Packages are removed one-by-one.
+
+        NOTE: package managers may reimplement this method
+        NOTE: no package-installation exceptions should be raised
+        """
+        for package in package_list:
+            try:
+                self.remove_package(package)
+            except subprocess.CalledProcessError:
+                libcalamares.utils.warning("Could not remove package %s" % package)
 
 ### PACKAGE MANAGER IMPLEMENTATIONS
 #
@@ -256,6 +338,23 @@ class PMEntropy(PackageManager):
         pass
 
 
+class PMLuet(PackageManager):
+    backend = "luet"
+
+    def install(self, pkgs, from_local=False):
+        check_target_env_call(["luet", "install", "-y"] + pkgs)
+
+    def remove(self, pkgs):
+        check_target_env_call(["luet", "uninstall", "-y"] + pkgs)
+
+    def update_db(self):
+          # Luet checks for DB update everytime its ran.
+        pass
+
+    def update_system(self):
+        check_target_env_call(["luet", "upgrade", "-y"])
+
+
 class PMPackageKit(PackageManager):
     backend = "packagekit"
 
@@ -277,23 +376,104 @@ class PMPackageKit(PackageManager):
 class PMPacman(PackageManager):
     backend = "pacman"
 
-    def install(self, pkgs, from_local=False):
-        if from_local:
-            pacman_flags = "-U"
-        else:
-            pacman_flags = "-S"
+    def __init__(self):
+        import re
+        progress_match = re.compile("^\\((\\d+)/(\\d+)\\)")
 
-        check_target_env_call(["pacman", pacman_flags,
-                               "--noconfirm"] + pkgs)
+        def line_cb(line):
+            if line.startswith(":: "):
+                self.in_package_changes = "package" in line or "hooks" in line
+            else:
+                if self.in_package_changes and line.endswith("...\n"):
+                    # Update the message, untranslated; do not change the
+                    # progress percentage, since there may be more "installing..."
+                    # lines in the output for the group, than packages listed
+                    # explicitly. We don't know how to calculate proper progress.
+                    global custom_status_message
+                    custom_status_message = "pacman: " + line.strip()
+                    libcalamares.job.setprogress(self.progress_fraction)
+            libcalamares.utils.debug(line)
+
+        self.in_package_changes = False
+        self.line_cb = line_cb
+
+        pacman = libcalamares.job.configuration.get("pacman", None)
+        if pacman is None:
+            pacman = dict()
+        if type(pacman) is not dict:
+            libcalamares.utils.warning("Job configuration *pacman* will be ignored.")
+            pacman = dict()
+        self.pacman_num_retries = pacman.get("num_retries", 0)
+        self.pacman_disable_timeout = pacman.get("disable_download_timeout", False)
+        self.pacman_needed_only = pacman.get("needed_only", False)
+
+    def reset_progress(self):
+        self.in_package_changes = False
+        # These are globals
+        self.progress_fraction = (completed_packages * 1.0 / total_packages)
+
+    def run_pacman(self, command, callback=False):
+        """
+        Call pacman in a loop until it is successful or the number of retries is exceeded
+        :param command: The pacman command to run
+        :param callback: An optional boolean that indicates if this pacman run should use the callback
+        :return:
+        """
+
+        pacman_count = 0
+        while pacman_count <= self.pacman_num_retries:
+            pacman_count += 1
+            try:
+                if False: # callback:
+                    libcalamares.utils.target_env_process_output(command, self.line_cb)
+                else:
+                    libcalamares.utils.target_env_process_output(command)
+
+                return
+            except subprocess.CalledProcessError:
+                if pacman_count <= self.pacman_num_retries:
+                    pass
+                else:
+                    raise
+
+    def install(self, pkgs, from_local=False):
+        command = ["pacman"]
+
+        if from_local:
+            command.append("-U")
+        else:
+            command.append("-S")
+
+        # Don't ask for user intervention, take the default action
+        command.append("--noconfirm")
+
+        # Don't report download progress for each file
+        command.append("--noprogressbar")
+
+        if self.pacman_needed_only is True:
+            command.append("--needed")
+
+        if self.pacman_disable_timeout is True:
+            command.append("--disable-download-timeout")
+
+        command += pkgs
+
+        self.reset_progress()
+        self.run_pacman(command, True)
 
     def remove(self, pkgs):
-        check_target_env_call(["pacman", "-Rs", "--noconfirm"] + pkgs)
+        self.reset_progress()
+        self.run_pacman(["pacman", "-Rs", "--noconfirm"] + pkgs, True)
 
     def update_db(self):
-        check_target_env_call(["pacman", "-Sy"])
+        self.run_pacman(["pacman", "-Sy"])
 
     def update_system(self):
-        check_target_env_call(["pacman", "-Su", "--noconfirm"])
+        command = ["pacman", "-Su", "--noconfirm"]
+        if self.pacman_disable_timeout is True:
+            command.append("--disable-download-timeout")
+
+        self.run_pacman(command)
 
 
 class PMPamac(PackageManager):
@@ -486,45 +666,19 @@ def run_operations(pkgman, entry):
         group_packages = len(package_list)
         if key == "install":
             _change_mode(INSTALL)
-            if all([isinstance(x, str) for x in package_list]):
-                pkgman.install(package_list)
-            else:
-                for package in package_list:
-                    pkgman.install_package(package)
+            pkgman.operation_install(package_list)
         elif key == "try_install":
             _change_mode(INSTALL)
-            # we make a separate package manager call for each package so a
-            # single failing package won't stop all of them
-            for package in package_list:
-                try:
-                    pkgman.install_package(package)
-                except subprocess.CalledProcessError:
-                    warn_text = "Could not install package "
-                    warn_text += str(package)
-                    libcalamares.utils.warning(warn_text)
+            pkgman.operation_try_install(package_list)
         elif key == "remove":
             _change_mode(REMOVE)
-            if all([isinstance(x, str) for x in package_list]):
-                pkgman.remove(package_list)
-            else:
-                for package in package_list:
-                    pkgman.remove_package(package)
+            pkgman.operation_remove(package_list)
         elif key == "try_remove":
             _change_mode(REMOVE)
-            for package in package_list:
-                try:
-                    pkgman.remove_package(package)
-                except subprocess.CalledProcessError:
-                    warn_text = "Could not remove package "
-                    warn_text += str(package)
-                    libcalamares.utils.warning(warn_text)
+            pkgman.operation_try_remove(package_list)
         elif key == "localInstall":
             _change_mode(INSTALL)
-            if all([isinstance(x, str) for x in package_list]):
-                pkgman.install(package_list, from_local=True)
-            else:
-                for package in package_list:
-                    pkgman.install_package(package, from_local=True)
+            pkgman.operation_install(package_list, from_local=True)
         elif key == "source":
             libcalamares.utils.debug("Package-list from {!s}".format(entry[key]))
         else:
@@ -562,11 +716,27 @@ def run():
 
     update_db = libcalamares.job.configuration.get("update_db", False)
     if update_db and libcalamares.globalstorage.value("hasInternet"):
-        pkgman.update_db()
+        try:
+            pkgman.update_db()
+        except subprocess.CalledProcessError as e:
+            libcalamares.utils.warning(str(e))
+            libcalamares.utils.debug("stdout:" + str(e.stdout))
+            libcalamares.utils.debug("stderr:" + str(e.stderr))
+            return (_("Package Manager error"),
+                    _("The package manager could not prepare updates. The command <pre>{!s}</pre> returned error code {!s}.")
+                    .format(e.cmd, e.returncode))
 
     update_system = libcalamares.job.configuration.get("update_system", False)
     if update_system and libcalamares.globalstorage.value("hasInternet"):
-        pkgman.update_system()
+        try:
+            pkgman.update_system()
+        except subprocess.CalledProcessError as e:
+            libcalamares.utils.warning(str(e))
+            libcalamares.utils.debug("stdout:" + str(e.stdout))
+            libcalamares.utils.debug("stderr:" + str(e.stderr))
+            return (_("Package Manager error"),
+                    _("The package manager could not update the system. The command <pre>{!s}</pre> returned error code {!s}.")
+                    .format(e.cmd, e.returncode))
 
     operations = libcalamares.job.configuration.get("operations", [])
     if libcalamares.globalstorage.contains("packageOperations"):
@@ -586,11 +756,18 @@ def run():
     for entry in operations:
         group_packages = 0
         libcalamares.utils.debug(pretty_name())
-        run_operations(pkgman, entry)
+        try:
+            run_operations(pkgman, entry)
+        except subprocess.CalledProcessError as e:
+            libcalamares.utils.warning(str(e))
+            libcalamares.utils.debug("stdout:" + str(e.stdout))
+            libcalamares.utils.debug("stderr:" + str(e.stderr))
+            return (_("Package Manager error"),
+                    _("The package manager could not make changes to the installed system. The command <pre>{!s}</pre> returned error code {!s}.")
+                    .format(e.cmd, e.returncode))
 
     mode_packages = None
 
     libcalamares.job.setprogress(1.0)
-    libcalamares.utils.debug(pretty_name())
 
     return None

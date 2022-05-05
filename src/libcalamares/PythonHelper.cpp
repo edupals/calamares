@@ -26,6 +26,11 @@ namespace CalamaresPython
 boost::python::object
 variantToPyObject( const QVariant& variant )
 {
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wswitch-enum"
+#endif
+    // 49 enumeration values not handled
     switch ( variant.type() )
     {
     case QVariant::Map:
@@ -40,22 +45,31 @@ variantToPyObject( const QVariant& variant )
 
     case QVariant::Int:
         return bp::object( variant.toInt() );
+    case QVariant::UInt:
+        return bp::object( variant.toUInt() );
 
     case QVariant::LongLong:
         return bp::object( variant.toLongLong() );
+    case QVariant::ULongLong:
+        return bp::object( variant.toULongLong() );
 
     case QVariant::Double:
         return bp::object( variant.toDouble() );
 
+    case QVariant::Char:
     case QVariant::String:
         return bp::object( variant.toString().toStdString() );
 
     case QVariant::Bool:
         return bp::object( variant.toBool() );
 
+    case QVariant::Invalid:
     default:
         return bp::object();
     }
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 }
 
 
@@ -431,14 +445,24 @@ GlobalStoragePythonWrapper::keys() const
 int
 GlobalStoragePythonWrapper::remove( const std::string& key )
 {
-    return m_gs->remove( QString::fromStdString( key ) );
+    const QString gsKey( QString::fromStdString( key ) );
+    if ( !m_gs->contains( gsKey ) )
+    {
+        cWarning() << "Unknown GS key" << key.c_str();
+    }
+    return m_gs->remove( gsKey );
 }
 
 
 bp::object
 GlobalStoragePythonWrapper::value( const std::string& key ) const
 {
-    return CalamaresPython::variantToPyObject( m_gs->value( QString::fromStdString( key ) ) );
+    const QString gsKey( QString::fromStdString( key ) );
+    if ( !m_gs->contains( gsKey ) )
+    {
+        cWarning() << "Unknown GS key" << key.c_str();
+    }
+    return CalamaresPython::variantToPyObject( m_gs->value( gsKey ) );
 }
 
 }  // namespace CalamaresPython

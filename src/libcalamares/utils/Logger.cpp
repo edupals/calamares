@@ -20,6 +20,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QMutex>
+#include <QRandomGenerator>
+#include <QTextStream>
 #include <QTime>
 #include <QVariant>
 
@@ -33,7 +35,7 @@ static unsigned int s_threshold =
 #ifdef QT_NO_DEBUG
     Logger::LOG_DISABLE;
 #else
-    Logger::LOGEXTRA + 1;  // Comparison is < in log() function
+    Logger::LOGDEBUG;  // Comparison is < in log() function
 #endif
 static QMutex s_mutex;
 
@@ -69,7 +71,7 @@ logLevel()
 static void
 log( const char* msg, unsigned int debugLevel, bool withTime = true )
 {
-    if ( true )
+    if ( logLevelEnabled( debugLevel ) )
     {
         QMutexLocker lock( &s_mutex );
 
@@ -81,11 +83,7 @@ log( const char* msg, unsigned int debugLevel, bool withTime = true )
                 << QString::number( debugLevel ).toUtf8().data() << "]: " << msg << std::endl;
 
         logfile.flush();
-    }
 
-    if ( logLevelEnabled( debugLevel ) )
-    {
-        QMutexLocker lock( &s_mutex );
         if ( withTime )
         {
             std::cout << QTime::currentTime().toString().toUtf8().data() << " ["
@@ -105,20 +103,21 @@ CalamaresLogHandler( QtMsgType type, const QMessageLogContext&, const QString& m
     const char* message = ba.constData();
 
     QMutexLocker locker( &s_mutex );
+
     switch ( type )
     {
-    case QtDebugMsg:
+    case QtInfoMsg:
         log( message, LOGVERBOSE );
         break;
-
-    case QtInfoMsg:
-        log( message, 1 );
+    case QtDebugMsg:
+        log( message, LOGDEBUG );
         break;
-
-    case QtCriticalMsg:
     case QtWarningMsg:
+        log( message, LOGWARNING );
+        break;
+    case QtCriticalMsg:
     case QtFatalMsg:
-        log( message, 0 );
+        log( message, LOGERROR );
         break;
     }
 }
@@ -229,6 +228,60 @@ toString( const QVariant& v )
     {
         return v.toString();
     }
+}
+
+QDebug&
+operator<<( QDebug& s, const RedactedCommand& l )
+{
+    // Special case logging: don't log the (encrypted) password.
+    if ( l.list.contains( "usermod" ) )
+    {
+        for ( const auto& item : l.list )
+            if ( item.startsWith( "$6$" ) )
+            {
+                s << "<password>";
+            }
+            else
+            {
+                s << item;
+            }
+    }
+    else
+    {
+        s << l.list;
+    }
+
+    return s;
+}
+
+/** @brief Returns a stable-but-private hash of @p context and @p s
+ *
+ * Identical strings with the same context will be hashed the same,
+ * so that they can be logged and still recognized as the-same.
+ */
+static uint
+insertRedactedName( const QString& context, const QString& s )
+{
+    static uint salt = QRandomGenerator::global()->generate();  // Just once
+
+    uint val = qHash( context, salt );
+    return qHash( s, val );
+}
+
+RedactedName::RedactedName( const QString& context, const QString& s )
+    : m_id( insertRedactedName( context, s ) )
+    , m_context( context )
+{
+}
+
+RedactedName::RedactedName( const char* context, const QString& s )
+    : RedactedName( QString::fromLatin1( context ), s )
+{
+}
+
+RedactedName::operator QString() const
+{
+    return QString( m_context + '$' + QString::number( m_id, 16 ) );
 }
 
 }  // namespace Logger

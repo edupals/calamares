@@ -84,6 +84,8 @@ public:
         PartitionModel* partitionModelAfter;
     };
 
+    struct DeviceInfo;
+
     PartitionCoreModule( QObject* parent = nullptr );
     ~PartitionCoreModule() override;
 
@@ -122,7 +124,7 @@ public:
      * The single BootLoaderModel instance belongs to the PCM.
      * @return the BootLoaderModel.
      */
-    QAbstractItemModel* bootLoaderModel() const;
+    BootLoaderModel* bootLoaderModel() const;
 
     void createPartitionTable( Device* device, PartitionTable::TableType type );
 
@@ -147,6 +149,8 @@ public:
 
     void formatPartition( Device* device, Partition* partition );
 
+    void setFilesystemLabel( Device* device, Partition* partition, const QString& newLabel );
+
     void resizePartition( Device* device, Partition* partition, qint64 first, qint64 last );
 
     void setPartitionFlags( Device* device, Partition* partition, PartitionTable::Flags flags );
@@ -156,11 +160,11 @@ public:
     /// @brief Set the path where the bootloader will be installed
     void setBootLoaderInstallPath( const QString& path );
 
-    /** @brief Initialize the default layout that will be applied
+    /** @brief Get the partition layout that will be applied.
      *
-     * See PartitionLayout::init()
+     * Layouts are applied only for erase and replace operations.
      */
-    void initLayout( FileSystem::Type defaultFsType, const QVariantList& config = QVariantList() );
+    PartitionLayout& partitionLayout() { return m_partLayout; }
 
     void layoutApply( Device* dev, qint64 firstSector, qint64 lastSector, QString luksPassphrase );
     void layoutApply( Device* dev,
@@ -237,7 +241,6 @@ Q_SIGNALS:
     void deviceReverted( Device* device );
 
 private:
-    struct DeviceInfo;
     void refreshAfterModelChange();
 
     void doInit();

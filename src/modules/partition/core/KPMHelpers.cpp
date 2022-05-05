@@ -15,8 +15,8 @@
 
 #include "partition/PartitionIterator.h"
 #include "utils/Logger.h"
+#include "utils/String.h"
 
-// KPMcore
 #include <kpmcore/backend/corebackendmanager.h>
 #include <kpmcore/core/device.h>
 #include <kpmcore/core/partition.h>
@@ -46,11 +46,13 @@ createNewPartition( PartitionNode* parent,
                     const Device& device,
                     const PartitionRole& role,
                     FileSystem::Type fsType,
+                    const QString& fsLabel,
                     qint64 firstSector,
                     qint64 lastSector,
                     PartitionTable::Flags flags )
 {
     FileSystem* fs = FileSystemFactory::create( fsType, firstSector, lastSector, device.logicalSize() );
+    fs->setLabel( fsLabel );
     return new Partition( parent,
                           device,
                           role,
@@ -71,6 +73,7 @@ createNewEncryptedPartition( PartitionNode* parent,
                              const Device& device,
                              const PartitionRole& role,
                              FileSystem::Type fsType,
+                             const QString& fsLabel,
                              qint64 firstSector,
                              qint64 lastSector,
                              const QString& passphrase,
@@ -92,6 +95,7 @@ createNewEncryptedPartition( PartitionNode* parent,
 
     fs->createInnerFileSystem( fsType );
     fs->setPassphrase( passphrase );
+    fs->setLabel( fsLabel );
     Partition* p = new Partition( parent,
                                   device,
                                   PartitionRole( newRoles ),
@@ -122,5 +126,24 @@ clonePartition( Device* device, Partition* partition )
                           partition->partitionPath(),
                           partition->activeFlags() );
 }
+
+Calamares::JobResult
+execute( Operation& operation, const QString& failureMessage )
+{
+    operation.setStatus( Operation::StatusRunning );
+
+    Report report( nullptr );
+    if ( operation.execute( report ) )
+    {
+        return Calamares::JobResult::ok();
+    }
+
+    // Remove the === lines from the report by trimming them to empty
+    QStringList l = report.toText().split( '\n' );
+    std::for_each( l.begin(), l.end(), []( QString& s ) { CalamaresUtils::removeLeading( s, '=' ); } );
+
+    return Calamares::JobResult::error( failureMessage, l.join( '\n' ) );
+}
+
 
 }  // namespace KPMHelpers

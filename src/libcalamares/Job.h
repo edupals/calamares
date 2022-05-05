@@ -35,7 +35,8 @@ public:
         NoError = 0,
         GenericError = -1,
         PythonUncaughtException = 1,
-        InvalidConfiguration = 2
+        InvalidConfiguration = 2,
+        MissingRequirements = 3,
     };
 
     // Can't copy, but you can keep a temporary
@@ -46,7 +47,7 @@ public:
 
     /** @brief Is this JobResult a success?
      *
-     * Equivalent to errorCode() == 0, might be named  isValid().
+     * Equivalent to errorCode() == 0, see succeeded().
      */
     virtual operator bool() const;
 
@@ -57,6 +58,11 @@ public:
     virtual void setDetails( const QString& details );
 
     int errorCode() const { return m_number; }
+    /** @brief Is this JobResult a success?
+     *
+     * Equivalent to errorCode() == 0.
+     */
+    bool succeeded() const { return this->operator bool(); }
 
     /// @brief an "ok status" result
     static JobResult ok();
@@ -131,6 +137,11 @@ public:
     void setEmergency( bool e ) { m_emergency = e; }
 
 signals:
+    /** @brief Signals that the job has made progress
+     *
+     * The parameter @p percent should be between 0 (0%) and 1 (100%).
+     * Values outside of this range will be clamped.
+     */
     void progress( qreal percent );
 
 private:

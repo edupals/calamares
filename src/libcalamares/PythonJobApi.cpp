@@ -16,7 +16,10 @@
 #include "partition/Mount.h"
 #include "utils/CalamaresUtilsSystem.h"
 #include "utils/Logger.h"
+#include "utils/RAII.h"
+#include "utils/Runner.h"
 #include "utils/String.h"
+#include "utils/Yaml.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -25,7 +28,7 @@
 namespace bp = boost::python;
 
 static int
-_handle_check_target_env_call_error( const CalamaresUtils::ProcessResult& ec, const QString& cmd )
+handle_check_target_env_call_error( const CalamaresUtils::ProcessResult& ec, const QString& cmd )
 {
     if ( !ec.first )
     {
@@ -46,6 +49,26 @@ _handle_check_target_env_call_error( const CalamaresUtils::ProcessResult& ec, co
     return ec.first;
 }
 
+static inline QStringList
+bp_list_to_qstringlist( const bp::list& args )
+{
+    QStringList list;
+    for ( int i = 0; i < bp::len( args ); ++i )
+    {
+        list.append( QString::fromStdString( bp::extract< std::string >( args[ i ] ) ) );
+    }
+    return list;
+}
+
+static inline CalamaresUtils::ProcessResult
+target_env_command( const QStringList& args, const std::string& input, int timeout )
+{
+    // Since Python doesn't give us the type system for distinguishing
+    // seconds from other integral types, massage to seconds here.
+    return CalamaresUtils::System::instance()->targetEnvCommand(
+        args, QString(), QString::fromStdString( input ), std::chrono::seconds( timeout ) );
+}
+
 namespace CalamaresPython
 {
 
@@ -61,92 +84,98 @@ mount( const std::string& device_path,
                                              QString::fromStdString( options ) );
 }
 
-
-static inline QStringList
-_bp_list_to_qstringlist( const bp::list& args )
-{
-    QStringList list;
-    for ( int i = 0; i < bp::len( args ); ++i )
-    {
-        list.append( QString::fromStdString( bp::extract< std::string >( args[ i ] ) ) );
-    }
-    return list;
-}
-
-static inline CalamaresUtils::ProcessResult
-_target_env_command( const QStringList& args, const std::string& stdin, int timeout )
-{
-    // Since Python doesn't give us the type system for distinguishing
-    // seconds from other integral types, massage to seconds here.
-    return CalamaresUtils::System::instance()->targetEnvCommand(
-        args, QString(), QString::fromStdString( stdin ), std::chrono::seconds( timeout ) );
-}
-
 int
-target_env_call( const std::string& command, const std::string& stdin, int timeout )
+target_env_call( const std::string& command, const std::string& input, int timeout )
 {
-    return _target_env_command( QStringList { QString::fromStdString( command ) }, stdin, timeout ).first;
+    return target_env_command( QStringList { QString::fromStdString( command ) }, input, timeout ).first;
 }
 
 
 int
-target_env_call( const bp::list& args, const std::string& stdin, int timeout )
+target_env_call( const bp::list& args, const std::string& input, int timeout )
 {
-    return _target_env_command( _bp_list_to_qstringlist( args ), stdin, timeout ).first;
+    return target_env_command( bp_list_to_qstringlist( args ), input, timeout ).first;
 }
 
 
 int
-check_target_env_call( const std::string& command, const std::string& stdin, int timeout )
+check_target_env_call( const std::string& command, const std::string& input, int timeout )
 {
-    auto ec = _target_env_command( QStringList { QString::fromStdString( command ) }, stdin, timeout );
-    return _handle_check_target_env_call_error( ec, QString::fromStdString( command ) );
+    auto ec = target_env_command( QStringList { QString::fromStdString( command ) }, input, timeout );
+    return handle_check_target_env_call_error( ec, QString::fromStdString( command ) );
 }
 
 
 int
-check_target_env_call( const bp::list& args, const std::string& stdin, int timeout )
+check_target_env_call( const bp::list& args, const std::string& input, int timeout )
 {
-    auto ec = _target_env_command( _bp_list_to_qstringlist( args ), stdin, timeout );
+    auto ec = target_env_command( bp_list_to_qstringlist( args ), input, timeout );
     if ( !ec.first )
     {
         return ec.first;
     }
 
-    QStringList failedCmdList = _bp_list_to_qstringlist( args );
-    return _handle_check_target_env_call_error( ec, failedCmdList.join( ' ' ) );
+    QStringList failedCmdList = bp_list_to_qstringlist( args );
+    return handle_check_target_env_call_error( ec, failedCmdList.join( ' ' ) );
 }
 
 
 std::string
-check_target_env_output( const std::string& command, const std::string& stdin, int timeout )
+check_target_env_output( const std::string& command, const std::string& input, int timeout )
 {
-    auto ec = _target_env_command( QStringList { QString::fromStdString( command ) }, stdin, timeout );
-    _handle_check_target_env_call_error( ec, QString::fromStdString( command ) );
+    auto ec = target_env_command( QStringList { QString::fromStdString( command ) }, input, timeout );
+    handle_check_target_env_call_error( ec, QString::fromStdString( command ) );
     return ec.second.toStdString();
 }
 
 
 std::string
-check_target_env_output( const bp::list& args, const std::string& stdin, int timeout )
+check_target_env_output( const bp::list& args, const std::string& input, int timeout )
 {
-    QStringList list = _bp_list_to_qstringlist( args );
-    auto ec = _target_env_command( list, stdin, timeout );
-    _handle_check_target_env_call_error( ec, list.join( ' ' ) );
+    QStringList list = bp_list_to_qstringlist( args );
+    auto ec = target_env_command( list, input, timeout );
+    handle_check_target_env_call_error( ec, list.join( ' ' ) );
     return ec.second.toStdString();
+}
+
+static const char output_prefix[] = "[PYTHON JOB]:";
+static inline void
+log_action( unsigned int level, const std::string& s )
+{
+    Logger::CDebug( level ) << output_prefix << QString::fromStdString( s );
 }
 
 void
 debug( const std::string& s )
 {
-    Logger::CDebug( Logger::LOGDEBUG ) << "[PYTHON JOB]: " << QString::fromStdString( s );
+    log_action( Logger::LOGDEBUG, s );
 }
 
 void
 warning( const std::string& s )
 {
-    cWarning() << "[PYTHON JOB]: " << QString::fromStdString( s );
+    log_action( Logger::LOGWARNING, s );
 }
+
+void
+error( const std::string& s )
+{
+    log_action( Logger::LOGERROR, s );
+}
+
+boost::python::dict
+load_yaml( const std::string& path )
+{
+    const QString filePath = QString::fromStdString( path );
+    bool ok = false;
+    auto map = CalamaresUtils::loadYaml( filePath, &ok );
+    if ( !ok )
+    {
+        cWarning() << "Loading YAML from" << filePath << "failed.";
+    }
+    return variantMapToPyDict( map );
+}
+
 
 PythonJobInterface::PythonJobInterface( Calamares::PythonJob* parent )
     : m_parent( parent )
@@ -166,6 +195,67 @@ PythonJobInterface::setprogress( qreal progress )
     {
         m_parent->emitProgress( progress );
     }
+}
+
+static inline int
+_process_output( Calamares::Utils::RunLocation location,
+                 const boost::python::list& args,
+                 const boost::python::object& callback,
+                 const std::string& input,
+                 int timeout )
+{
+    Calamares::Utils::Runner r( bp_list_to_qstringlist( args ) );
+    r.setLocation( location );
+    if ( !callback.is_none() )
+    {
+        bp::extract< bp::list > x( callback );
+        if ( x.check() )
+        {
+            QObject::connect( &r, &decltype( r )::output, [cb = callback.attr( "append" )]( const QString& s ) {
+                cb( s.toStdString() );
+            } );
+        }
+        else
+        {
+            QObject::connect(
+                &r, &decltype( r )::output, [&callback]( const QString& s ) { callback( s.toStdString() ); } );
+        }
+        r.enableOutputProcessing();
+    }
+    if ( !input.empty() )
+    {
+        r.setInput( QString::fromStdString( input ) );
+    }
+    if ( timeout > 0 )
+    {
+        r.setTimeout( std::chrono::seconds( timeout ) );
+    }
+
+    auto result = r.run();
+
+    if ( result.getExitCode() )
+    {
+        return handle_check_target_env_call_error( result, r.executable() );
+    }
+    return 0;
+}
+
+int
+target_env_process_output( const boost::python::list& args,
+                           const boost::python::object& callback,
+                           const std::string& input,
+                           int timeout )
+{
+    return _process_output( Calamares::Utils::RunLocation::RunInTarget, args, callback, input, timeout );
+}
+
+int
+host_env_process_output( const boost::python::list& args,
+                         const boost::python::object& callback,
+                         const std::string& input,
+                         int timeout )
+{
+    return _process_output( Calamares::Utils::RunLocation::RunInHost, args, callback, input, timeout );
 }
 
 
@@ -240,6 +330,10 @@ _add_localedirs( QStringList& pathList, const QString& candidate )
 bp::object
 gettext_path()
 {
+    // Going to log informatively just once
+    static bool first_time = true;
+    cScopedAssignment( &first_time, false );
+
     // TODO: distinguish between -d runs and normal runs
     // TODO: can we detect DESTDIR-installs?
     QStringList candidatePaths
@@ -256,21 +350,26 @@ gettext_path()
     }
     _add_localedirs( candidatePaths, QDir().canonicalPath() );  // .
 
-    cDebug() << "Determining gettext path from" << candidatePaths;
+    if ( first_time )
+    {
+        cDebug() << "Determining gettext path from" << candidatePaths;
+    }
 
     QStringList candidateLanguages = _gettext_languages();
-
     for ( const auto& lang : candidateLanguages )
+    {
         for ( auto localedir : candidatePaths )
         {
             QDir ldir( localedir );
             if ( ldir.cd( lang ) )
             {
-                cDebug() << Logger::SubEntry << "Found" << lang << "in" << ldir.canonicalPath();
+                Logger::CDebug( Logger::LOGDEBUG )
+                    << output_prefix << "Found gettext" << lang << "in" << ldir.canonicalPath();
                 return bp::object( localedir.toStdString() );
             }
         }
-    cDebug() << Logger::SubEntry << "No translation found for languages" << candidateLanguages;
+    }
+    cWarning() << "No translation found for languages" << candidateLanguages;
     return bp::object();  // None
 }
 

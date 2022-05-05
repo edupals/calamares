@@ -104,10 +104,19 @@ ModuleManager::doInit()
                     if ( ok && !moduleName.isEmpty() && ( moduleName == currentDir.dirName() )
                          && !m_availableDescriptorsByModuleName.contains( moduleName ) )
                     {
-                        auto descriptor
-                            = Calamares::ModuleSystem::Descriptor::fromDescriptorData( moduleDescriptorMap );
+                        auto descriptor = Calamares::ModuleSystem::Descriptor::fromDescriptorData(
+                            moduleDescriptorMap, descriptorFileInfo.absoluteFilePath() );
                         descriptor.setDirectory( descriptorFileInfo.absoluteDir().absolutePath() );
                         m_availableDescriptorsByModuleName.insert( moduleName, descriptor );
+                    }
+                    else
+                    {
+                        // Duplicate modules are ok; other issues like empty name or dir-mismatch are reported.
+                        if ( !m_availableDescriptorsByModuleName.contains( moduleName ) )
+                        {
+                            cWarning() << deb << "ModuleManager module descriptor"
+                                       << descriptorFileInfo.absoluteFilePath() << "has bad name" << moduleName;
+                        }
                     }
                 }
                 else
@@ -266,8 +275,8 @@ ModuleManager::loadModules()
             // thisModule. We now need to enqueue jobs info into an EVS.
             if ( currentAction == ModuleSystem::Action::Exec )
             {
-                ExecutionViewStep* evs
-                    = qobject_cast< ExecutionViewStep* >( Calamares::ViewManager::instance()->viewSteps().last() );
+                const auto steps = Calamares::ViewManager::instance()->viewSteps();
+                ExecutionViewStep* evs = steps.isEmpty() ? nullptr : qobject_cast< ExecutionViewStep* >( steps.last() );
                 if ( !evs )  // If the last step is not an EVS, we must create it.
                 {
                     evs = new ExecutionViewStep( ViewManager::instance() );
@@ -281,7 +290,7 @@ ModuleManager::loadModules()
     if ( !failedModules.isEmpty() )
     {
         ViewManager::instance()->onInitFailed( failedModules );
-        QTimer::singleShot( 10, [=]() { emit modulesFailed( failedModules ); } );
+        QTimer::singleShot( 10, [ = ]() { emit modulesFailed( failedModules ); } );
     }
     else
     {
@@ -337,9 +346,10 @@ ModuleManager::checkRequirements()
 
     RequirementsChecker* rq = new RequirementsChecker( modules, m_requirementsModel, this );
     connect( rq, &RequirementsChecker::done, rq, &RequirementsChecker::deleteLater );
-    connect( rq, &RequirementsChecker::done, this, [=]() {
-        this->requirementsComplete( m_requirementsModel->satisfiedMandatory() );
-    } );
+    connect( rq,
+             &RequirementsChecker::done,
+             this,
+             [ = ]() { this->requirementsComplete( m_requirementsModel->satisfiedMandatory() ); } );
 
     QTimer::singleShot( 0, rq, &RequirementsChecker::run );
 }

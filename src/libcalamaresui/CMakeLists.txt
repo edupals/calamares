@@ -27,8 +27,11 @@ set( calamaresui_SOURCES
     viewpages/ViewStep.cpp
 
     widgets/ClickableLabel.cpp
+    widgets/ErrorDialog.cpp
     widgets/FixedAspectRatioLabel.cpp
     widgets/PrettyRadioButton.cpp
+    widgets/LogWidget.cpp
+    widgets/TranslationFix.cpp
     widgets/WaitingWidget.cpp
     ${CMAKE_SOURCE_DIR}/3rdparty/waitingspinnerwidget.cpp
 
@@ -38,8 +41,6 @@ set( calamaresui_SOURCES
 
 # Don't warn about third-party sources
 mark_thirdparty_code(
-    ${CMAKE_SOURCE_DIR}/3rdparty/qjsonitem.cpp
-    ${CMAKE_SOURCE_DIR}/3rdparty/qjsonmodel.cpp
     ${CMAKE_SOURCE_DIR}/3rdparty/waitingspinnerwidget.cpp
 )
 
@@ -72,12 +73,13 @@ calamares_add_library( calamaresui
     EXPORT_MACRO UIDLLEXPORT_PRO
     LINK_LIBRARIES
         Qt5::Svg
-        yamlcpp
     RESOURCES libcalamaresui.qrc
     EXPORT Calamares
+    UI
+        utils/ErrorDialog/ErrorDialog.ui
     VERSION ${CALAMARES_VERSION_SHORT}
 )
-
+target_link_libraries( calamaresui PRIVATE yamlcpp::yamlcpp )
 if( KF5CoreAddons_FOUND AND KF5CoreAddons_VERSION VERSION_GREATER_EQUAL 5.58 )
     target_compile_definitions( calamaresui PRIVATE WITH_KOSRelease )
 endif()
@@ -89,6 +91,8 @@ endif()
 if( WITH_QML )
     target_link_libraries( calamaresui PUBLIC Qt5::QuickWidgets )
 endif()
+
+add_library(Calamares::calamaresui ALIAS calamaresui)
 
 
 ### Installation
