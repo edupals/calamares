@@ -70,6 +70,6 @@ Description: distribution-independent installer framework
 
 Package: calamares-dev
 Architecture: linux-any
-Depends: calamares
+Depends: calamares, qttools5-dev
 Description: Calamares development package
  Calamares development package with headers and cmake recipes

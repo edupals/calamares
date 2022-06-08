@@ -1,3 +1,9 @@
+calamares (1:3.2.57-1edupals1+resolvpatch11) lliurex22; urgency=medium
+
+  * Added qttools5-dev to calamares-dev deps, needed by modules
+
+ -- Enrique Medina Gremaldos <quiqueiii@gmail.com>  Wed, 08 Jun 2022 10:56:09 +0200
+
 calamares (1:3.2.57-1edupals1+resolvpatch10) lliurex22; urgency=medium
 
   * Dummy upgrade
