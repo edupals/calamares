@@ -1,3 +1,9 @@
+calamares (1:3.2.59-1edupals1+resolvpatch1) lliurex22; urgency=medium
+
+  * Sync with 3.2.59 (after a big battle with git)
+
+ -- Enrique Medina Gremaldos <quiqueiii@gmail.com>  Mon, 13 Jun 2022 11:47:01 +0200
+
 calamares (1:3.2.57-1edupals1+resolvpatch12) lliurex22; urgency=medium
 
   * Added a bunch of dev dependencies
