@@ -78,6 +78,20 @@ updateGSAutoLogin( bool doAutoLogin, const QString& login )
     }
 }
 
+static const QStringList&
+alwaysForbiddenLoginNames()
+{
+    static QStringList s { QStringLiteral( "root" ), QStringLiteral( "nobody" ) };
+    return s;
+}
+
+static const QStringList&
+alwaysForbiddenHostNames()
+{
+    static QStringList s { QStringLiteral( "localhost" ) };
+    return s;
+}
+
 const NamedEnumTable< HostNameAction >&
 hostnameActionNames()
 {
@@ -98,6 +112,8 @@ hostnameActionNames()
 
 Config::Config( QObject* parent )
     : Calamares::ModuleSystem::Config( parent )
+    , m_forbiddenHostNames( alwaysForbiddenHostNames() )
+    , m_forbiddenLoginNames( alwaysForbiddenLoginNames() )
 {
     emit readyChanged( m_isReady );  // false
 
@@ -201,10 +217,9 @@ Config::setLoginName( const QString& login )
 }
 
 const QStringList&
-Config::forbiddenLoginNames()
+Config::forbiddenLoginNames() const
 {
-    static QStringList forbidden { "root" };
-    return forbidden;
+    return m_forbiddenLoginNames;
 }
 
 QString
@@ -220,13 +235,6 @@ Config::loginNameStatus() const
     {
         return tr( "Your username is too long." );
     }
-    for ( const QString& badName : forbiddenLoginNames() )
-    {
-        if ( 0 == QString::compare( badName, m_loginName, Qt::CaseSensitive ) )
-        {
-            return tr( "'%1' is not allowed as username." ).arg( badName );
-        }
-    }
 
     QRegExp validateFirstLetter( "^[a-z_]" );
     if ( validateFirstLetter.indexIn( m_loginName ) != 0 )
@@ -236,6 +244,12 @@ Config::loginNameStatus() const
     if ( !USERNAME_RX.exactMatch( m_loginName ) )
     {
         return tr( "Only lowercase letters, numbers, underscore and hyphen are allowed." );
+    }
+
+    // Although we've made the list lower-case, and the RE above forces lower-case, still pass the flag
+    if ( forbiddenLoginNames().contains( m_loginName, Qt::CaseInsensitive ) )
+    {
+        return tr( "'%1' is not allowed as username." ).arg( m_loginName );
     }
 
     return QString();
@@ -268,10 +282,9 @@ Config::setHostName( const QString& host )
 }
 
 const QStringList&
-Config::forbiddenHostNames()
+Config::forbiddenHostNames() const
 {
-    static QStringList forbidden { "localhost" };
-    return forbidden;
+    return m_forbiddenHostNames;
 }
 
 QString
@@ -291,12 +304,11 @@ Config::hostnameStatus() const
     {
         return tr( "Your hostname is too long." );
     }
-    for ( const QString& badName : forbiddenHostNames() )
+
+    // "LocalHost" is just as forbidden as "localhost"
+    if ( forbiddenHostNames().contains( m_hostname, Qt::CaseInsensitive ) )
     {
-        if ( 0 == QString::compare( badName, m_hostname, Qt::CaseSensitive ) )
-        {
-            return tr( "'%1' is not allowed as hostname." ).arg( badName );
-        }
+        return tr( "'%1' is not allowed as hostname." ).arg( m_hostname );
     }
 
     if ( !HOSTNAME_RX.exactMatch( m_hostname ) )
@@ -881,16 +893,41 @@ copyLegacy( const QVariantMap& source, const QString& sourceKey, QVariantMap& ta
     }
 }
 
+/** @brief Tidy up a list of names
+ *
+ * Remove duplicates, apply lowercase, sort.
+ */
+static void
+tidy( QStringList& l )
+{
+    std::for_each( l.begin(), l.end(), []( QString& s ) { s = s.toLower(); } );
+    l.sort();
+    l.removeDuplicates();
+}
+
 void
 Config::setConfigurationMap( const QVariantMap& configurationMap )
 {
-    QString shell( QLatin1String( "/bin/bash" ) );  // as if it's not set at all
-    if ( configurationMap.contains( "userShell" ) )
+    // Handle *user* key and subkeys and legacy settings
     {
-        shell = CalamaresUtils::getString( configurationMap, "userShell" );
+        bool ok = false;  // Ignored
+        QVariantMap userSettings = CalamaresUtils::getSubMap( configurationMap, "user", ok );
+
+        // TODO:3.3: Remove calls to copyLegacy
+        copyLegacy( configurationMap, "userShell", userSettings, "shell" );
+
+        QString shell( QLatin1String( "/bin/bash" ) );  // as if it's not set at all
+        if ( userSettings.contains( "shell" ) )
+        {
+            shell = CalamaresUtils::getString( userSettings, "shell" );
+        }
+        // Now it might be explicitly set to empty, which is ok
+        setUserShell( shell );
+
+        m_forbiddenLoginNames = CalamaresUtils::getStringList( userSettings, "forbidden_names" );
+        m_forbiddenLoginNames << alwaysForbiddenLoginNames();
+        tidy( m_forbiddenLoginNames );
     }
-    // Now it might be explicitly set to empty, which is ok
-    setUserShell( shell );
 
     setAutoLoginGroup( either< QString, const QString& >(
         CalamaresUtils::getString, configurationMap, "autologinGroup", "autoLoginGroup", QString() ) );
@@ -911,6 +948,10 @@ Config::setConfigurationMap( const QVariantMap& configurationMap )
         m_writeEtcHosts = CalamaresUtils::getBool( hostnameSettings, "writeHostsFile", true );
         m_hostnameTemplate
             = CalamaresUtils::getString( hostnameSettings, "template", QStringLiteral( "${first}-${product}" ) );
+
+        m_forbiddenHostNames = CalamaresUtils::getStringList( hostnameSettings, "forbidden_names" );
+        m_forbiddenHostNames << alwaysForbiddenHostNames();
+        tidy( m_forbiddenHostNames );
     }
 
     setConfigurationDefaultGroups( configurationMap, m_defaultGroups );
