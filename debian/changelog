@@ -1,3 +1,9 @@
+calamares (1:3.2.59-1edupals1+resolvpatch2) lliurex22; urgency=medium
+
+  * Added a new patch for allowing calamares to install ca_ES@valencia locale
+
+ -- Enrique Medina Gremaldos <quiqueiii@gmail.com>  Tue, 14 Jun 2022 12:07:43 +0200
+
 calamares (1:3.2.59-1edupals1+resolvpatch1) lliurex22; urgency=medium
 
   * Sync with 3.2.59 (after a big battle with git)
