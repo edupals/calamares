@@ -1,0 +1,44 @@
+From: Lt-Henry <quiqueiii@gmail.com>
+Date: Tue, 14 Jun 2022 11:59:46 +0200
+Subject: allowing locale ca_ES@valencia to be installed
+
+---
+ src/modules/locale/Config.cpp              | 6 +++++-
+ src/modules/locale/LocaleConfiguration.cpp | 6 ++++++
+ 2 files changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/src/modules/locale/Config.cpp b/src/modules/locale/Config.cpp
+index 5888fd0..c84cb3c 100644
+--- a/src/modules/locale/Config.cpp
++++ b/src/modules/locale/Config.cpp
+@@ -305,8 +305,12 @@ Config::automaticLocaleConfiguration() const
+     {
+         return LocaleConfiguration();
+     }
++
++    QVariant localeConf = Calamares::JobQueue::instance()->globalStorage()->value(QStringLiteral("localeConf"));
++    QString LANG = localeConf.toMap()["LANG"].toString();
++
+     return LocaleConfiguration::fromLanguageAndLocation(
+-        QLocale().name(), supportedLocales(), currentLocation()->country() );
++        LANG, supportedLocales(), currentLocation()->country() );
+ }
+ 
+ LocaleConfiguration
+diff --git a/src/modules/locale/LocaleConfiguration.cpp b/src/modules/locale/LocaleConfiguration.cpp
+index b7b8952..61fce37 100644
+--- a/src/modules/locale/LocaleConfiguration.cpp
++++ b/src/modules/locale/LocaleConfiguration.cpp
+@@ -46,6 +46,12 @@ LocaleConfiguration::fromLanguageAndLocation( const QString& languageLocale,
+                                               const QStringList& availableLocales,
+                                               const QString& countryCode )
+ {
++
++    if (languageLocale == QString::fromLatin1("ca@valencia")) {
++        cDebug()<<"Handling special case "<<languageLocale;
++        return LocaleConfiguration("ca_ES.UTF-8@valencia","ca_ES.UTF-8");
++    }
++
+     QString language = languageLocale.split( '_' ).first();
+ 
+     // Either an exact match, or the whole language part matches

@@ -7,10 +7,10 @@ Subject: add /net in mountPoints list
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/modules/partition/gui/PartitionDialogHelpers.cpp b/src/modules/partition/gui/PartitionDialogHelpers.cpp
-index c5c3527..6c55002 100644
+index 1ba1103..026f8eb 100644
 --- a/src/modules/partition/gui/PartitionDialogHelpers.cpp
 +++ b/src/modules/partition/gui/PartitionDialogHelpers.cpp
-@@ -23,7 +23,7 @@
+@@ -27,7 +27,7 @@
  QStringList
  standardMountPoints()
  {
