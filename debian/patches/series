@@ -1,4 +1,4 @@
 0003-add-patch-to-install-packages-on-live.patch
 0005-replace-pkexec-with-sudo.patch
 0006-add-net-in-mountPoints-list.patch
-0004-allowing-locale-ca_ES-valencia-to-be-installed.patch
+#0004-allowing-locale-ca_ES-valencia-to-be-installed.patch
