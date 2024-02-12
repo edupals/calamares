@@ -1,0 +1,28 @@
+From: Raul Rodrigo <raurodse@gmail.com>
+Date: Mon, 12 Feb 2024 12:37:38 +0100
+Subject: remove catala
+
+---
+ src/libcalamares/locale/Translation.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/libcalamares/locale/Translation.cpp b/src/libcalamares/locale/Translation.cpp
+index 279949d..5326204 100644
+--- a/src/libcalamares/locale/Translation.cpp
++++ b/src/libcalamares/locale/Translation.cpp
+@@ -57,13 +57,13 @@ static constexpr const TranslationSpecialCase special_cases[] = {
+       QLocale::Language::Catalan,
+       QLocale::Script::AnyScript,
+       QLocale::Country::AnyCountry,
+-      "Català (València)" },
++      "València" },
+     { "ca_ES@valencia",
+       catalan_regions,
+       QLocale::Language::Catalan,
+       QLocale::Script::AnyScript,
+       QLocale::Country::AnyCountry,
+-      "Català (València)" },
++      "València" },
+     // Simplified Chinese, but drop the (China) from the name
+     { "zh_CN",
+       nullptr,
