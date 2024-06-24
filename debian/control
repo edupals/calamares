@@ -5,71 +5,96 @@ Maintainer: Jonathan Carter <jcc@debian.org>
 Build-Depends: cmake,
                cryptsetup,
                debhelper-compat (= 13),
-               extra-cmake-modules,
                gettext,
                libappstreamqt-dev,
                libatasmart-dev,
                libboost-python-dev,
-               libkf5config-dev,
-               libkf5coreaddons-dev,
-               libkf5crash-dev,
-               libkf5i18n-dev,
-               libkf5iconthemes-dev,
-               libkf5kio-dev,
-               libkf5package-dev,
-               libkf5parts-dev,
-               libkf5plasma-dev,
-               libkf5service-dev,
-               libkf5solid-dev,
+               libicu-dev,
+               kf6-extra-cmake-modules,
+               kf6-kconfig-dev,
+               kf6-kcoreaddons-dev,
+               kf6-kcrash-dev,
+               kf6-kdbusaddons-dev,
+               kf6-ki18n-dev,
+               kf6-kiconthemes-dev,
+               kf6-kio-dev,
+               kf6-kpackage-dev,
+               kf6-kparts-dev,
+               kf6-kservice-dev,
+               kf6-solid-dev,
                libkpmcore-dev,
                libparted-dev,
-               libpolkit-qt5-1-dev,
+               libplasma-dev,
+               libpolkit-qt6-1-dev,
                libpwquality-dev,
-               libqt5svg5-dev,
                libyaml-cpp-dev,
                os-prober,
                pkg-config,
-               pkg-kde-tools,
-               policykit-1,
-               python3-dev,
-               qml-module-qtquick-layouts,
-               qml-module-qtquick-privatewidgets,
-               qml-module-qtquick-window2,
-               qml-module-qtquick2,
-               qtbase5-dev,
-               qtdeclarative5-dev,
-               qttools5-dev,
-               qttools5-dev-tools,
-               qtwebengine5-dev
-Standards-Version: 4.5.0
+               pkg-kde-tools-neon,
+               pkexec,
+               python3-all-dev,
+               python3-yaml,
+               python3-jsonschema,
+               qt6-base-dev,
+               qt6-declarative-dev,
+               qt6-location-dev,
+               qt6-svg-dev,
+               qt6-tools-dev,
+               qt6-webengine-dev,
+Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Homepage: https://github.com/calamares/calamares
 Vcs-Browser: https://salsa.debian.org/qt-kde-team/extras/calamares
 Vcs-Git: https://salsa.debian.org/qt-kde-team/extras/calamares.git
 
 Package: calamares
-Architecture: linux-any
+Architecture: any
+Section: utils
 Depends: os-prober,
-         qml-module-qtquick-window2,
-         qml-module-qtquick2,
+         qt6-declarative,
          rsync,
          ${misc:Depends},
-         ${shlibs:Depends}
-Recommends: btrfs-progs, grub-efi-amd64-bin, grub-pc, konsole, squashfs-tools
+         ${shlibs:Depends},
+Recommends: btrfs-progs,
+            grub-efi-amd64-bin,
+            grub-pc,
+            konsole,
+            squashfs-tools,
 Description: distribution-independent installer framework
  Calamares is a distribution-independent installer framework.
  .
- It provides a graphical installer that can be used with nearly
- any distribution. This package is suitable for live media on
- Debian-based systems, and won't be of any particular use on
- an already installed system.
+ It provides a graphical installer that can be used with nearly any
+ distribution. This package is suitable for live media on Debian-based systems,
+ and won't be of any particular use on an already installed system.
  .
- You will likely want to provide your own config files to match
- your distribution, reading the Calamares documentation will guide
- you through that process.
+ You will likely want to provide your own config files to match your
+ distribution, reading the Calamares documentation will guide you through that
+ process.
 
 Package: calamares-dev
-Architecture: linux-any
-Depends: calamares, extra-cmake-modules, libappstreamqt-dev, libatasmart-dev, libboost-python-dev, libkf5config-dev, libkf5coreaddons-dev, libkf5crash-dev, libkf5i18n-dev, libkf5iconthemes-dev, libkf5kio-dev, libkf5package-dev, libkf5parts-dev, libkf5plasma-dev, libkf5service-dev, libkf5solid-dev, libkpmcore-dev, libparted-dev, libpolkit-qt5-1-dev, libpwquality-dev, libqt5svg5-dev, libyaml-cpp-dev, qtbase5-dev, qtdeclarative5-dev, qttools5-dev, qttools5-dev-tools, qtwebengine5-dev
-Description: Calamares development package
- Calamares development package with headers and cmake recipes
+Architecture: any
+Section: devel
+Depends: calamares,
+         libyaml-cpp-dev,
+         os-prober,
+         qt6-base-dev,
+         qt6-declarative-dev,
+         qt6-location-dev,
+         qt6-svg-dev,
+         qt6-tools-dev,
+         qt6-webengine-dev,
+         rsync,
+         ${misc:Depends},
+         ${shlibs:Depends},
+Description: distribution-independent installer framework
+ Calamares is a distribution-independent installer framework.
+ .
+ It provides a graphical installer that can be used with nearly any
+ distribution. This package is suitable for live media on Debian-based systems,
+ and won't be of any particular use on an already installed system.
+ .
+ You will likely want to provide your own config files to match your
+ distribution, reading the Calamares documentation will guide you through that
+ process.
+ .
+ This package contains the development files.

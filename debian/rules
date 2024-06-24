@@ -7,14 +7,13 @@ export DEB_BUILD_MAINT_OPTIONS=hardening=+all
 #export DEB_BUILD_OPTIONS=buildinfo=+path
 
 %:
-	dh $@ --with kf5
+	dh $@ --with kf6 --buildsystem kf6
 
 override_dh_auto_configure:
-	dh_auto_configure -- -DWITH_PYTHONQT=ON -DKDE_INSTALL_USE_QT_SYS_PATHS=ON
+	dh_auto_configure -- -DKDE_INSTALL_USE_QT_SYS_PATHS=ON -DINSTALL_COMPLETION=ON -DWITH_QT6=ON
 
 override_dh_auto_install:
 	dh_auto_install --destdir=debian/tmp
 
 # Some test don't work well, we don't need to run them at package build time.
 override_dh_auto_test:
-

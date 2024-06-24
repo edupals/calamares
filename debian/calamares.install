@@ -1,3 +1,4 @@
+debian/kded_device_automounterrc /etc/xdg/
 usr/bin/
 usr/lib/*/calamares/
 usr/lib/*/libcalamares*.so.*
