@@ -1,3 +1,9 @@
+calamares (3.3.7-0neon+lliurex1) noble; urgency=medium
+
+  * Add lliurex patches
+
+ -- Raul Rodrigo Segura <raurodse@gmail.com>  Mon, 24 Jun 2024 14:06:29 +0200
+
 calamares (3.3.7-0neon) noble; urgency=medium
 
   * New release
