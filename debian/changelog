@@ -1,3 +1,9 @@
+calamares (3.3.7-0xneon+lliurex1) noble; urgency=medium
+
+  * Dummy upgrade
+
+ -- Raul Rodrigo Segura <raurodse@gmail.com>  Wed, 26 Jun 2024 09:43:59 +0200
+
 calamares (3.3.7-0neon+lliurex1) noble; urgency=medium
 
   * Add lliurex patches
