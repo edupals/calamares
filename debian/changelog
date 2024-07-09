@@ -1,3 +1,9 @@
+calamares (3.3.8-0xneon+lliurex1) noble; urgency=medium
+
+  * Sync with upstream
+
+ -- Raul Rodrigo Segura <raurodse@gmail.com>  Tue, 09 Jul 2024 12:46:14 +0200
+
 calamares (3.3.7-0xneon+lliurex1) noble; urgency=medium
 
   * Dummy upgrade
