@@ -1,3 +1,9 @@
+calamares (3.3.14-lliurex2) noble; urgency=medium
+
+  * Rebuild with new version qt 
+
+ -- Raul Rodrigo Segura <raurodse@gmail.com>  Wed, 23 Apr 2025 11:16:09 +0200
+
 calamares (3.3.14-lliurex1) noble; urgency=medium
 
   * Sync with upstream 
