@@ -1,3 +1,9 @@
+calamares (3.3.14-lliurex3) noble; urgency=medium
+
+  * try fix virtualbox fail 
+
+ -- Raul Rodrigo Segura <raurodse@gmail.com>  Fri, 25 Apr 2025 09:12:36 +0200
+
 calamares (3.3.14-lliurex2) noble; urgency=medium
 
   * Rebuild with new version qt 
