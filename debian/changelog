@@ -1,3 +1,9 @@
+calamares (3.3.14-lliurex4) noble; urgency=medium
+
+  * Build with libkpmcore12
+
+ -- Raul Rodrigo Segura <raurodse@gmail.com>  Fri, 25 Apr 2025 12:15:28 +0200
+
 calamares (3.3.14-lliurex3) noble; urgency=medium
 
   * try fix virtualbox fail 
