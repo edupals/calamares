@@ -1,3 +1,9 @@
+calamares (3.3.14-lliurex5) noble; urgency=medium
+
+  * Add valencian translations
+
+ -- Raul Rodrigo Segura <raurodse@gmail.com>  Sun, 04 May 2025 18:57:29 +0200
+
 calamares (3.3.14-lliurex4) noble; urgency=medium
 
   * Build with libkpmcore12
