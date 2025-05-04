@@ -7,10 +7,10 @@ Subject: add patch to install packages on live
  1 file changed, 8 insertions(+)
 
 diff --git a/src/modules/networkcfg/main.py b/src/modules/networkcfg/main.py
-index 807fdf6..7e15885 100644
+index efe6930..994ee42 100644
 --- a/src/modules/networkcfg/main.py
 +++ b/src/modules/networkcfg/main.py
-@@ -19,6 +19,8 @@ import shutil
+@@ -20,6 +20,8 @@ import shutil
  import libcalamares
  
  import gettext
@@ -19,7 +19,7 @@ index 807fdf6..7e15885 100644
  _ = gettext.translation("calamares-python",
                          localedir=libcalamares.utils.gettext_path(),
                          languages=libcalamares.utils.gettext_languages(),
-@@ -143,6 +145,12 @@ def run():
+@@ -179,6 +181,12 @@ network:
  
          try:
              shutil.copy(source_resolv, target_resolv, follow_symlinks=False)

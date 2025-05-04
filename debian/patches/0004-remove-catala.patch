@@ -7,10 +7,10 @@ Subject: remove catala
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/src/libcalamares/locale/Translation.cpp b/src/libcalamares/locale/Translation.cpp
-index 279949d..5326204 100644
+index d250661..d71d5f1 100644
 --- a/src/libcalamares/locale/Translation.cpp
 +++ b/src/libcalamares/locale/Translation.cpp
-@@ -57,13 +57,13 @@ static constexpr const TranslationSpecialCase special_cases[] = {
+@@ -61,13 +61,13 @@ static constexpr const TranslationSpecialCase special_cases[] = {
        QLocale::Language::Catalan,
        QLocale::Script::AnyScript,
        QLocale::Country::AnyCountry,
