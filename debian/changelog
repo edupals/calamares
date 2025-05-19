@@ -1,3 +1,9 @@
+calamares (3.3.14-lliurex6) noble; urgency=medium
+
+  * Rebuild with libkpmcore13 
+
+ -- Raul Rodrigo Segura <raurodse@gmail.com>  Mon, 19 May 2025 10:34:34 +0200
+
 calamares (3.3.14-lliurex5) noble; urgency=medium
 
   * Add valencian translations
